@@ -23,11 +23,12 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm install, build, and test
+      - name: npm install and build
         run: |
           npm install
           npm run build --if-present
-          npm run test --if-present
+          # Tests are integration tests (need a live Postgres DB + API keys) and
+          # cannot run on the build runner, so they are not part of the deploy.
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -54,6 +55,26 @@ jobs:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_78000D5EC5E14F2498A53DCDF2DDA520 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_289B910376D54D709ECD2FAB2673C09F }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_3BD2BDD34B3A486B9BFA53196E532D09 }}
+
+      - name: Set Azure Web App settings (from GitHub secrets)
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: 'ClaimAgentSocket'
+          slot-name: 'Production'
+          app-settings-json: |
+            [
+              { "name": "NODE_ENV",          "value": "production" },
+              { "name": "DATABASE_SSL",      "value": "true" },
+              { "name": "GEMINI_LIVE_MODEL", "value": "models/gemini-2.5-flash-native-audio-latest" },
+              { "name": "GEMINI_TEXT_MODEL", "value": "gemini-2.5-flash" },
+              { "name": "GEMINI_API_KEY",    "value": "${{ secrets.GEMINI_API_KEY }}" },
+              { "name": "DATABASE_URL",      "value": "${{ secrets.DATABASE_URL }}" },
+              { "name": "STORAGE_NAME",      "value": "${{ secrets.STORAGE_NAME }}" },
+              { "name": "CONTAINER_NAME",    "value": "${{ secrets.CONTAINER_NAME }}" },
+              { "name": "TENANT_ID",         "value": "${{ secrets.STORAGE_TENANT_ID }}" },
+              { "name": "CLIENT_ID",         "value": "${{ secrets.STORAGE_CLIENT_ID }}" },
+              { "name": "CLIENT_SECRET",     "value": "${{ secrets.STORAGE_CLIENT_SECRET }}" }
+            ]
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
