@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
   FileText,
@@ -6,7 +6,9 @@ import {
   BookOpen,
   Clock,
   Users,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from '../auth/AuthContext';
 
 const navSections = [
   {
@@ -57,6 +59,14 @@ function SidebarLink({ to, icon: Icon, label, badge, end }) {
 }
 
 export default function Sidebar() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
+
   return (
     <aside className="fixed top-0 left-0 h-screen w-[260px] bg-white border-r border-gray-200 flex flex-col z-10">
       {/* Logo */}
@@ -93,7 +103,7 @@ export default function Sidebar() {
           <div className="w-8 h-8 rounded-full bg-[#464e7e] flex items-center justify-center text-white text-xs font-semibold shrink-0">
             SK
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[13px] text-gray-900 font-medium truncate">
               Sarah Kim
             </p>
@@ -101,6 +111,14 @@ export default function Sidebar() {
               Claims Adjuster
             </p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Log out"
+            aria-label="Log out"
+            className="text-gray-400 hover:text-[#464e7e] transition shrink-0"
+          >
+            <LogOut size={16} strokeWidth={1.8} />
+          </button>
         </div>
       </div>
     </aside>

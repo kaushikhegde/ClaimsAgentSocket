@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './auth/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Scenarios from './pages/Scenarios';
 import Sessions from './pages/Sessions';
@@ -11,19 +14,25 @@ import Training from './pages/Training';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/scenarios" element={<Scenarios />} />
-          <Route path="/sessions" element={<Sessions />} />
-          <Route path="/sessions/:id" element={<SessionDetail />} />
-          <Route path="/performance" element={<Performance />} />
-          <Route path="/coaching" element={<Coaching />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-        </Route>
-        <Route path="/training/:scenarioId" element={<Training />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/scenarios" element={<Scenarios />} />
+            <Route path="/sessions" element={<Sessions />} />
+            <Route path="/sessions/:id" element={<SessionDetail />} />
+            <Route path="/performance" element={<Performance />} />
+            <Route path="/coaching" element={<Coaching />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+          </Route>
+          <Route
+            path="/training/:scenarioId"
+            element={<ProtectedRoute><Training /></ProtectedRoute>}
+          />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
