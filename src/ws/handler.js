@@ -11,10 +11,6 @@ const path = require('path');
 
 const VALID_TYPES = new Set(['start_session', 'audio', 'user_transcript', 'end_session']);
 const MAX_AUDIO_BASE64_LENGTH = 200000; // ~150KB decoded
-const AUDIO_DIR = path.join(__dirname, '../../audio');
-
-// Ensure audio directory exists
-fs.mkdirSync(AUDIO_DIR, { recursive: true });
 
 /**
  * Resample 16kHz PCM to 24kHz using linear interpolation.
@@ -146,25 +142,25 @@ function buildWavBuffer(timeline) {
 }
 
 /**
- * Persist the WAV: upload to Azure Blob under claims-agent/ when configured,
- * otherwise write to local disk (dev fallback). Returns the stored reference to
- * save in the DB ("claims-agent/<name>.wav" or "audio/<name>.wav"), or null.
+ * Persist the WAV to Azure Blob under claims-agent/. Returns the stored blob
+ * reference to save in the DB ("claims-agent/<name>.wav"), or null when there
+ * is no audio. Throws if Azure Blob storage is not configured — audio is
+ * Azure-only and is never written to local disk.
  */
 async function saveAudio(timeline, name) {
   const wavBuffer = buildWavBuffer(timeline);
   if (!wavBuffer) return null;
 
-  const fileName = `${name}.wav`;
-  if (blobStorage.isConfigured()) {
-    const blobName = await blobStorage.uploadAudio(fileName, wavBuffer);
-    logger.info(`Audio uploaded to blob: ${blobName}`);
-    return blobName;
+  if (!blobStorage.isConfigured()) {
+    throw new Error(
+      'Azure Blob storage is not configured — set STORAGE_NAME, CONTAINER_NAME, TENANT_ID, CLIENT_ID and CLIENT_SECRET'
+    );
   }
 
-  const filePath = path.join(AUDIO_DIR, fileName);
-  fs.writeFileSync(filePath, wavBuffer, { mode: 0o600 });
-  logger.info(`Audio saved locally: audio/${fileName}`);
-  return `audio/${fileName}`;
+  const fileName = `${name}.wav`;
+  const blobName = await blobStorage.uploadAudio(fileName, wavBuffer);
+  logger.info(`Audio uploaded to blob: ${blobName}`);
+  return blobName;
 }
 
 async function handleConnection(ws) {

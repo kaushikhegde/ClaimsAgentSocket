@@ -1,6 +1,5 @@
 const express = require('express');
 const http = require('http');
-const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const path = require('path');
 const config = require('./config');
@@ -79,62 +78,35 @@ app.get('/api/sessions/:id/audio', async (req, res) => {
     const stored = session.audio_file_path;
     const range = req.headers.range;
 
-    // Audio kept in Azure Blob (claims-agent/...) — proxy the bytes through here.
-    if (stored.startsWith(`${blobStorage.PREFIX}/`)) {
-      const { contentLength } = await blobStorage.getAudioProperties(stored);
-      if (range) {
-        const parts = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
-        const chunkSize = end - start + 1;
-        const stream = await blobStorage.downloadAudio(stored, start, chunkSize);
-        res.writeHead(206, {
-          'Content-Range': `bytes ${start}-${end}/${contentLength}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type': 'audio/wav',
-        });
-        stream.pipe(res);
-      } else {
-        const stream = await blobStorage.downloadAudio(stored);
-        res.writeHead(200, {
-          'Content-Length': contentLength,
-          'Content-Type': 'audio/wav',
-          'Accept-Ranges': 'bytes',
-        });
-        stream.pipe(res);
-      }
-      return;
+    // Audio is Azure-only and lives under claims-agent/. Anything else (legacy
+    // local paths whose files are gone) no longer has a source — return 404.
+    if (!stored.startsWith(`${blobStorage.PREFIX}/`) || !(await blobStorage.audioExists(stored))) {
+      return res.status(404).json({ error: 'Audio not found' });
     }
 
-    // Local file (dev fallback)
-    const audioPath = path.join(__dirname, '..', stored);
-    if (!fs.existsSync(audioPath)) {
-      return res.status(404).json({ error: 'Audio file missing' });
-    }
-    const stat = fs.statSync(audioPath);
-    const fileSize = stat.size;
-
+    // Proxy the blob bytes through here, honouring Range requests.
+    const { contentLength } = await blobStorage.getAudioProperties(stored);
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
       const chunkSize = end - start + 1;
-      const stream = fs.createReadStream(audioPath, { start, end });
+      const stream = await blobStorage.downloadAudio(stored, start, chunkSize);
       res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Content-Range': `bytes ${start}-${end}/${contentLength}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': 'audio/wav',
       });
       stream.pipe(res);
     } else {
+      const stream = await blobStorage.downloadAudio(stored);
       res.writeHead(200, {
-        'Content-Length': fileSize,
+        'Content-Length': contentLength,
         'Content-Type': 'audio/wav',
         'Accept-Ranges': 'bytes',
       });
-      fs.createReadStream(audioPath).pipe(res);
+      stream.pipe(res);
     }
   } catch (err) {
     logger.error('Failed to serve audio', err);
