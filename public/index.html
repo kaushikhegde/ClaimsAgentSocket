@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Insurance Claims Assistant</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .disclaimer {
+      background: #fff3cd;
+      border-bottom: 1px solid #ffc107;
+      padding: 12px 20px;
+      text-align: center;
+      font-size: 14px;
+      color: #856404;
+    }
+
+    .header {
+      background: #1a237e;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .header h1 { font-size: 24px; font-weight: 600; }
+    .header p { font-size: 14px; opacity: 0.8; margin-top: 4px; }
+
+    .main {
+      flex: 1;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 12px 32px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #startBtn {
+      background: #2e7d32;
+      color: white;
+    }
+
+    #endBtn {
+      background: #c62828;
+      color: white;
+    }
+
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .status .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: #999;
+    }
+
+    .status .dot.connected { background: #2e7d32; }
+    .status .dot.recording { background: #c62828; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .transcript {
+      flex: 1;
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      overflow-y: auto;
+      min-height: 300px;
+      max-height: 60vh;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .message {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .message .role {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .message.agent .role { color: #1a237e; }
+    .message.claimant .role { color: #2e7d32; }
+
+    .message .text {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 85%;
+    }
+
+    .message.agent .text {
+      background: #e8eaf6;
+      align-self: flex-start;
+    }
+
+    .message.claimant .text {
+      background: #e8f5e9;
+      align-self: flex-end;
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .result-card h3 { margin-bottom: 12px; color: #1a237e; }
+
+    .result-card .field {
+      display: flex;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .result-card .field .label {
+      font-weight: 600;
+      width: 180px;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+
+    .result-card .field .value { font-size: 14px; }
+
+    .empty-state {
+      text-align: center;
+      color: #999;
+      padding: 60px 20px;
+    }
+
+    .message.streaming .text {
+      opacity: 0.8;
+      border-right: 2px solid currentColor;
+      animation: blink-cursor 0.8s infinite;
+    }
+
+    @keyframes blink-cursor {
+      0%, 100% { border-right-color: currentColor; }
+      50% { border-right-color: transparent; }
+    }
+  </style>
+</head>
+<body>
+  <div class="disclaimer">
+    This is an AI assistant. It cannot provide legal or medical advice. For emergencies, call 911.
+  </div>
+
+  <div class="header">
+    <h1>Insurance Claims Assistant</h1>
+    <p>Voice-powered claim intake</p>
+  </div>
+
+  <div class="main">
+    <div class="controls">
+      <button id="startBtn" onclick="startCall()">Start Call</button>
+      <button id="endBtn" onclick="endCall()" disabled>End Call</button>
+    </div>
+
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Ready to start</span>
+    </div>
+
+    <div class="transcript" id="transcript">
+      <div class="empty-state">Click "Start Call" to begin your claim</div>
+    </div>
+
+    <div id="resultContainer"></div>
+  </div>
+
+  <script>
+    let ws = null;
+    let mediaStream = null;
+    let audioContext = null;
+    let processor = null;
+    let playbackContext = null;
+    let micMuted = false;
+    let sessionActive = false;
+    let nextPlayTime = 0;
+    let streamingElements = {};
+    let unmuteTimer = null;
+
+    function setStatus(text, state) {
+      document.getElementById('statusText').textContent = text;
+      const dot = document.getElementById('statusDot');
+      dot.className = 'dot';
+      if (state) dot.classList.add(state);
+    }
+
+    async function startCall() {
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('endBtn').disabled = false;
+      document.getElementById('transcript').innerHTML = '';
+      document.getElementById('resultContainer').innerHTML = '';
+
+      // Fix 3: Reset all state for fresh session
+      micMuted = false;
+      nextPlayTime = 0;
+      sessionActive = true;
+      streamingElements = {};
+      if (unmuteTimer) { clearTimeout(unmuteTimer); unmuteTimer = null; }
+
+      setStatus('Requesting microphone access...', '');
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+
+        setStatus('Connecting...', '');
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+        ws.onopen = () => {
+          setStatus('Connected — waiting for AI...', 'connected');
+          ws.send(JSON.stringify({ type: 'start_session' }));
+        };
+
+        ws.onmessage = (event) => {
+          // Fix 5: try-catch on JSON.parse
+          try {
+            const msg = JSON.parse(event.data);
+            handleServerMessage(msg);
+          } catch (e) {
+            console.error('Failed to parse server message:', e);
+          }
+        };
+
+        ws.onerror = () => {
+          setStatus('Connection error', '');
+          cleanup();
+        };
+
+        ws.onclose = () => {
+          // Fix 4: Nullify ws on close
+          ws = null;
+          if (sessionActive) {
+            setStatus('Disconnected', '');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('endBtn').disabled = true;
+          }
+        };
+      } catch (err) {
+        setStatus('Microphone access denied. Please allow mic access and try again.', '');
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('endBtn').disabled = true;
+      }
+    }
+
+    function handleServerMessage(msg) {
+      // Fix 10: Ignore messages after cleanup
+      if (!sessionActive && msg.type !== 'result') return;
+
+      switch (msg.type) {
+        case 'ready':
+          setStatus('AI is greeting you...', 'connected');
+          break;
+
+        case 'greeting_done':
+          setStatus('Listening — speak now', 'recording');
+          startAudioCapture();
+          break;
+
+        case 'audio':
+          if (!micMuted) {
+            micMuted = true;
+            nextPlayTime = 0;
+            setStatus('AI is speaking...', 'connected');
+            // Cancel any pending unmute
+            if (unmuteTimer) { clearTimeout(unmuteTimer); unmuteTimer = null; }
+          }
+          queueAudio(msg.data);
+          break;
+
+        case 'transcript_delta':
+          updateStreamingMessage(msg.role, msg.text);
+          break;
+
+        case 'transcript_done':
+          finalizeStreamingMessage(msg.role);
+          break;
+
+        case 'turn_complete': {
+          // Fix 1: Delay unmute until audio finishes playing
+          let delay = 0;
+          if (playbackContext && playbackContext.state !== 'closed') {
+            delay = Math.max(0, (nextPlayTime - playbackContext.currentTime) * 1000 + 100);
+          }
+          unmuteTimer = setTimeout(() => {
+            micMuted = false;
+            nextPlayTime = 0;
+            if (sessionActive) setStatus('Listening — speak now', 'recording');
+            unmuteTimer = null;
+          }, delay);
+          break;
+        }
+
+        case 'conversation_ended': {
+          // Auto-end session after AI's farewell audio finishes playing
+          let endDelay = 0;
+          if (playbackContext && playbackContext.state !== 'closed') {
+            endDelay = Math.max(0, (nextPlayTime - playbackContext.currentTime) * 1000 + 500);
+          }
+          setStatus('Wrapping up...', 'connected');
+          setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'end_session' }));
+            }
+            document.getElementById('endBtn').disabled = true;
+          }, endDelay);
+          break;
+        }
+
+        case 'processing':
+          setStatus('Processing your claim...', 'connected');
+          break;
+
+        case 'result':
+          handleResult(msg);
+          break;
+
+        case 'session_end':
+          setStatus('Session ended', '');
+          cleanup();
+          document.getElementById('startBtn').disabled = false;
+          document.getElementById('endBtn').disabled = true;
+          break;
+
+        case 'error':
+          setStatus('Error: ' + (msg.message || 'Unknown error'), '');
+          break;
+      }
+    }
+
+    function startAudioCapture() {
+      audioContext = new AudioContext();
+      const nativeSampleRate = audioContext.sampleRate;
+
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      const bufferSize = nativeSampleRate <= 16000 ? 2048 : 4096;
+      processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (micMuted || !sessionActive) return;
+
+        const inputData = e.inputBuffer.getChannelData(0);
+
+        // Resample from native rate to 16kHz
+        const targetRate = 16000;
+        const ratio = nativeSampleRate / targetRate;
+        const targetLength = Math.floor(inputData.length / ratio);
+        const int16 = new Int16Array(targetLength);
+
+        for (let i = 0; i < targetLength; i++) {
+          const srcIndex = i * ratio;
+          const srcFloor = Math.floor(srcIndex);
+          const srcCeil = Math.min(srcFloor + 1, inputData.length - 1);
+          const frac = srcIndex - srcFloor;
+          const sample = inputData[srcFloor] * (1 - frac) + inputData[srcCeil] * frac;
+          // Fix 12: Symmetric Float32→Int16 conversion
+          int16[i] = Math.max(-0x8000, Math.min(0x7FFF, Math.round(sample * 0x8000)));
+        }
+
+        const bytes = new Uint8Array(int16.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        ws.send(JSON.stringify({ type: 'audio', data: btoa(binary) }));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+    }
+
+    function queueAudio(base64Data) {
+      // Fix 2: Guard against closed/null playback context
+      if (!playbackContext || playbackContext.state === 'closed') {
+        playbackContext = new AudioContext({ sampleRate: 24000 });
+      }
+
+      const binaryStr = atob(base64Data);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+
+      // Ensure even byte length for Int16Array
+      const validLength = bytes.length - (bytes.length % 2);
+      if (validLength === 0) return;
+
+      const int16 = new Int16Array(bytes.buffer, 0, validLength / 2);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 0x8000;
+      }
+
+      const buffer = playbackContext.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      const currentTime = playbackContext.currentTime;
+      if (nextPlayTime < currentTime) {
+        nextPlayTime = currentTime;
+      }
+
+      const source = playbackContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(playbackContext.destination);
+      source.start(nextPlayTime);
+      nextPlayTime += buffer.duration;
+    }
+
+    function updateStreamingMessage(role, fullText) {
+      const container = document.getElementById('transcript');
+      const empty = container.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      if (!streamingElements[role]) {
+        const div = document.createElement('div');
+        div.className = `message ${role} streaming`;
+        div.innerHTML = `
+          <span class="role">${role === 'agent' ? 'AI Assistant' : 'You'}</span>
+          <span class="text"></span>
+        `;
+        container.appendChild(div);
+        streamingElements[role] = div;
+      }
+
+      const textSpan = streamingElements[role].querySelector('.text');
+      textSpan.textContent = fullText;
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function finalizeStreamingMessage(role) {
+      if (streamingElements[role]) {
+        streamingElements[role].classList.remove('streaming');
+        streamingElements[role] = null;
+      }
+    }
+
+    function handleResult(msg) {
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('endBtn').disabled = true;
+
+      if (msg.status === 'success') {
+        setStatus('Claim submitted successfully', 'connected');
+        showClaimSummary(msg.claimId, msg.claimData);
+      } else if (msg.status === 'empty') {
+        setStatus('No conversation recorded', '');
+      } else {
+        setStatus('Error processing claim', '');
+      }
+
+      cleanup();
+    }
+
+    function showClaimSummary(claimId, data) {
+      const container = document.getElementById('resultContainer');
+      const fields = [
+        ['Claim ID', claimId],
+        ['Type', (data.claimType || '').replace(/_/g, ' ')],
+        ['Status', data.status],
+        ['Name', data.claimant?.fullName],
+        ['Phone', data.claimant?.phone],
+        ['Email', data.claimant?.email],
+        ['Policy #', data.claimant?.policyNumber],
+        ['Incident Date', data.incident?.date],
+        ['Location', data.incident?.location],
+        ['Description', data.incident?.description],
+        ['Severity', data.incident?.severity],
+      ].filter(([, v]) => v);
+
+      let html = '<div class="result-card"><h3>Claim Summary</h3>';
+      for (const [label, value] of fields) {
+        html += `<div class="field"><span class="label">${escapeHtml(String(label))}</span><span class="value">${escapeHtml(String(value))}</span></div>`;
+      }
+      if (data.missingFields && data.missingFields.length > 0) {
+        html += `<div class="field"><span class="label">Missing Fields</span><span class="value" style="color:#c62828">${escapeHtml(data.missingFields.join(', '))}</span></div>`;
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function endCall() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'end_session' }));
+      }
+      document.getElementById('endBtn').disabled = true;
+      setStatus('Ending call...', 'connected');
+    }
+
+    function cleanup() {
+      sessionActive = false;
+      if (unmuteTimer) { clearTimeout(unmuteTimer); unmuteTimer = null; }
+      // Fix 13: Null out processor handler before disconnect
+      if (processor) { processor.onaudioprocess = null; processor.disconnect(); processor = null; }
+      if (audioContext) { audioContext.close(); audioContext = null; }
+      if (playbackContext) { playbackContext.close(); playbackContext = null; }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        mediaStream = null;
+      }
+      micMuted = false;
+      nextPlayTime = 0;
+      streamingElements = {};
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

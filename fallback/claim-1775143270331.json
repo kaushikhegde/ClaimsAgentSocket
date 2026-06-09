@@ -1,0 +1,110 @@
+{
+  "transcript": "Claimant:  Hey\nAgent: Hello, I\nAgent:  am\nAgent:  an AI\nAgent:  claims\nAgent:  assistant.\nAgent:  Can\nAgent:  you tell\nAgent:  me\nAgent:  what\nAgent:  happened?\nClaimant:  I\nClaimant:  had\nClaimant:  an accident.\nAgent: I'm sorry\nAgent:  to hear\nAgent:  that.\nAgent:  To process your\nAgent:  claim,\nAgent:  could\nAgent:  you\nAgent:  please\nAgent:  tell\nAgent:  me your\nAgent:  full\nAgent:  name?",
+  "entries": [
+    {
+      "role": "claimant",
+      "message": " Hey"
+    },
+    {
+      "role": "agent",
+      "message": "Hello, I"
+    },
+    {
+      "role": "agent",
+      "message": " am"
+    },
+    {
+      "role": "agent",
+      "message": " an AI"
+    },
+    {
+      "role": "agent",
+      "message": " claims"
+    },
+    {
+      "role": "agent",
+      "message": " assistant."
+    },
+    {
+      "role": "agent",
+      "message": " Can"
+    },
+    {
+      "role": "agent",
+      "message": " you tell"
+    },
+    {
+      "role": "agent",
+      "message": " me"
+    },
+    {
+      "role": "agent",
+      "message": " what"
+    },
+    {
+      "role": "agent",
+      "message": " happened?"
+    },
+    {
+      "role": "claimant",
+      "message": " I"
+    },
+    {
+      "role": "claimant",
+      "message": " had"
+    },
+    {
+      "role": "claimant",
+      "message": " an accident."
+    },
+    {
+      "role": "agent",
+      "message": "I'm sorry"
+    },
+    {
+      "role": "agent",
+      "message": " to hear"
+    },
+    {
+      "role": "agent",
+      "message": " that."
+    },
+    {
+      "role": "agent",
+      "message": " To process your"
+    },
+    {
+      "role": "agent",
+      "message": " claim,"
+    },
+    {
+      "role": "agent",
+      "message": " could"
+    },
+    {
+      "role": "agent",
+      "message": " you"
+    },
+    {
+      "role": "agent",
+      "message": " please"
+    },
+    {
+      "role": "agent",
+      "message": " tell"
+    },
+    {
+      "role": "agent",
+      "message": " me your"
+    },
+    {
+      "role": "agent",
+      "message": " full"
+    },
+    {
+      "role": "agent",
+      "message": " name?"
+    }
+  ],
+  "duration": 138
+}
