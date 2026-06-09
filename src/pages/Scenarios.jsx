@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { Clock, ArrowRight } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
@@ -108,7 +109,7 @@ export default function Scenarios() {
   const [mode, setMode] = useState('scripted');
 
   useEffect(() => {
-    fetch('/api/scenarios')
+    fetch(apiUrl('/api/scenarios'))
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) setScenarios(data);

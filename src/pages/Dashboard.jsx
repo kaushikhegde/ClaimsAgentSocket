@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
@@ -134,7 +135,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/stats')
+    fetch(apiUrl('/api/stats'))
       .then((r) => r.json())
       .then((data) => {
         if (data && !data.error) setApiStats(data);

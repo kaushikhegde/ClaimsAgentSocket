@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, TrendingUp, TrendingDown, MessageSquare, Target, ArrowRight } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
@@ -36,7 +37,7 @@ export default function Coaching() {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    fetch('/api/stats?agent=default')
+    fetch(apiUrl('/api/stats?agent=default'))
       .then((r) => r.json())
       .then((data) => {
         if (data?.stats && Number(data.stats.total_sessions) > 0) {

@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { wsUrl } from '../api';
 
 export function useWebSocket({ onAudio, onGreetingDone, onTurnComplete } = {}) {
   const wsRef = useRef(null);
@@ -26,8 +27,7 @@ export function useWebSocket({ onAudio, onGreetingDone, onTurnComplete } = {}) {
     setTranscript([]);
     setResult(null);
     setPersona(null);
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    const ws = new WebSocket(wsUrl('/ws'));
     wsRef.current = ws;
 
     ws.onopen = () => {

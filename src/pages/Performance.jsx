@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import GlassCard from '../components/GlassCard';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -91,7 +92,7 @@ export default function Performance() {
   const [apiStats, setApiStats] = useState(null);
 
   useEffect(() => {
-    fetch('/api/stats?agent=default')
+    fetch(apiUrl('/api/stats?agent=default'))
       .then(r => r.json())
       .then(data => setApiStats(data))
       .catch(() => {});

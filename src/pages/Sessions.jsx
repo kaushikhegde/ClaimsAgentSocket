@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { Search, Heart, Ear, Bone, Shuffle, Zap } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
@@ -103,7 +104,7 @@ export default function Sessions() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch('/api/sessions?limit=50')
+    fetch(apiUrl('/api/sessions?limit=50'))
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) {

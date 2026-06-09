@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl } from '../api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, AlertTriangle, Pen, Clock, CheckCircle, XCircle } from 'lucide-react';
 import {
@@ -95,7 +96,7 @@ export default function SessionDetail() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/sessions/${id}`)
+    fetch(apiUrl(`/api/sessions/${id}`))
       .then(r => r.json())
       .then(data => {
         if (data && data.id) setSession(data);
@@ -329,7 +330,7 @@ export default function SessionDetail() {
               <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium mb-2">
                 Session Recording
               </p>
-              <audio controls className="w-full h-8" src={`/api/sessions/${id}/audio`}>
+              <audio controls className="w-full h-8" src={apiUrl(`/api/sessions/${id}/audio`)}>
                 Your browser does not support the audio element.
               </audio>
             </div>
