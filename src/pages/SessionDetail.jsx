@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../api';
+import { SCORE_LABELS as COMPETENCY_LABELS } from '../scoreLabels';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, AlertTriangle, Pen, Clock, CheckCircle, XCircle } from 'lucide-react';
 import {
@@ -24,6 +25,26 @@ const RTWASA_LABELS = {
   legalReference: 'Return to Work Act 2014 Reference',
 };
 
+/* ─── SOP Items ───────────────────────────────────────────────── */
+
+const SOP_LABELS = {
+  earlySupportiveContact: 'Early Supportive Contact',
+  careBeforeInjury: 'Care Before Injury Details',
+  openEndedListening: 'Open-Ended Listening',
+  healthFirstFraming: 'Health-First Framing',
+  confidentiality: 'Confidentiality & Privacy',
+  counsellorBoundary: 'Counsellor Boundary (Psych)',
+  gradualReturnCapability: 'Gradual Return / Capability',
+  suitableDuties: 'Suitable Duties',
+  keepInTouchPlan: 'Keep-in-Touch Plan',
+};
+
+const SOP_STATUS_STYLES = {
+  pass:    { box: 'bg-green-400/[0.06] border-green-400/[0.15]', text: 'text-green-400' },
+  partial: { box: 'bg-amber-400/[0.06] border-amber-400/[0.15]', text: 'text-amber-500' },
+  na:      { box: 'bg-gray-50 border-gray-100', text: 'text-gray-500' },
+};
+
 /* ─── Competency Gradients ────────────────────────────────────── */
 
 const COMPETENCY_GRADIENTS = {
@@ -36,19 +57,10 @@ const COMPETENCY_GRADIENTS = {
   fillerWords: 'from-blue-500 to-blue-400',
   responseTime: 'from-cyan-500 to-cyan-400',
   rtwasaCompliance: 'from-sky-500 to-sky-400',
+  sopCompliance: 'from-fuchsia-500 to-fuchsia-400',
 };
 
-const COMPETENCY_LABELS = {
-  empathy: 'Empathy',
-  compliance: 'Compliance',
-  informationGathering: 'Info Gathering',
-  questionQuality: 'Question Quality',
-  toneConsistency: 'Tone Consistency',
-  talkListenRatio: 'Talk / Listen',
-  fillerWords: 'Filler Words',
-  responseTime: 'Response Time',
-  rtwasaCompliance: 'RTWASA Compliance',
-};
+// Competency labels are imported from ../scoreLabels (SCORE_LABELS, aliased above).
 
 /* ─── Custom Tooltip ───────────────────────────────────────────── */
 
@@ -132,6 +144,10 @@ export default function SessionDetail() {
     { label: 'Info Gathering', value: session.scores?.informationGathering || 0, color: '#818cf8' },
     { label: 'Talk / Listen', value: session.scores?.talkListenRatio || 0, color: '#fb7185' },
     { label: 'RTWASA', value: session.scores?.rtwasaCompliance || 0, color: '#38bdf8' },
+    // Omit the SOP card for legacy sessions evaluated before SOP scoring existed.
+    ...(session.scores?.sopCompliance != null
+      ? [{ label: 'SOP', value: session.scores.sopCompliance, color: '#e879f9' }]
+      : []),
   ];
 
   // Build transcript from conversation logs
@@ -170,6 +186,7 @@ export default function SessionDetail() {
 
   // RTWASA breakdown
   const rtwasaBreakdown = session.rtwasa_breakdown || {};
+  const sopBreakdown = session.sop_breakdown || {};
 
   const sessionTitle = session.scenario_name
     ? `${session.scenario_name} — Session Review`
@@ -486,6 +503,47 @@ export default function SessionDetail() {
                       </p>
                       {item.details && (
                         <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">{item.details}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* ── SOP Compliance Breakdown ────────────────────────── */}
+      {Object.keys(sopBreakdown).length > 0 && (
+        <GlassCard hover={false} className="p-5">
+          <h2 className="text-[13px] font-semibold text-gray-900 uppercase tracking-wider mb-4">
+            SOP Compliance — Managing the Worker Relationship
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {Object.entries(SOP_LABELS).map(([key, label]) => {
+              const item = sopBreakdown[key] || { status: 'na', evidence: '', reference: '' };
+              const style = SOP_STATUS_STYLES[item.status] || SOP_STATUS_STYLES.na;
+              return (
+                <div key={key} className={`rounded-xl p-3 border ${style.box}`}>
+                  <div className="flex items-start gap-2">
+                    {item.status === 'pass' ? (
+                      <CheckCircle size={16} className="text-green-400 shrink-0 mt-0.5" />
+                    ) : item.status === 'partial' ? (
+                      <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle size={16} className="text-gray-500 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className={`text-[13px] font-medium ${style.text}`}>
+                        {label}
+                        {item.status === 'partial' && <span className="ml-1 text-[11px] uppercase">· partial</span>}
+                        {item.status === 'na' && <span className="ml-1 text-[11px] uppercase">· n/a</span>}
+                      </p>
+                      {item.evidence && (
+                        <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
+                          {item.evidence}
+                          {item.reference && <span className="text-gray-400"> ({item.reference})</span>}
+                        </p>
                       )}
                     </div>
                   </div>

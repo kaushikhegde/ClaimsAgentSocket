@@ -4,6 +4,7 @@ import { Mic, MicOff, Phone, PhoneOff, Clock, AlertCircle, User, Bot } from 'luc
 import GlassCard from '../components/GlassCard';
 import { useAudio } from '../hooks/useAudio';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { scoreLabel } from '../scoreLabels';
 
 /* ─── Avatar Components ──────────────────────────────────────── */
 
@@ -524,8 +525,8 @@ export default function Training() {
                 <div className="space-y-3 mb-6">
                   {Object.entries(result.scores).map(([key, value]) => (
                     <div key={key} className="flex items-center gap-3">
-                      <span className="w-28 text-xs text-gray-500 capitalize">
-                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                      <span className="w-28 text-xs text-gray-500">
+                        {scoreLabel(key)}
                       </span>
                       <div className="flex-1 h-1.5 rounded-full bg-gray-100">
                         <div
