@@ -349,6 +349,7 @@ async function endSession(session, ws, meta) {
         overallScore: evaluation.overallScore,
         scores: evaluation.scores,
         rtwasaBreakdown: evaluation.rtwasaBreakdown,
+        sopBreakdown: evaluation.sopBreakdown,
         sentiment: evaluation.sentiment,
         coaching: evaluation.coaching,
         durationSeconds: duration,
@@ -377,6 +378,7 @@ async function endSession(session, ws, meta) {
         overallScore: evaluation.overallScore,
         scores: evaluation.scores,
         rtwasaBreakdown: evaluation.rtwasaBreakdown,
+        sopBreakdown: evaluation.sopBreakdown,
         sentiment: evaluation.sentiment,
         coaching: evaluation.coaching,
         scenario: {

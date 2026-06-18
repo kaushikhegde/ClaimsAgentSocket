@@ -1,8 +1,25 @@
 const SCORE_FIELDS = [
   'empathy', 'compliance', 'informationGathering', 'questionQuality',
   'toneConsistency', 'talkListenRatio', 'fillerWords', 'responseTime',
-  'rtwasaCompliance'
+  'rtwasaCompliance', 'sopCompliance'
 ];
+
+const SOP_BREAKDOWN_KEYS = [
+  'earlySupportiveContact', 'careBeforeInjury', 'openEndedListening',
+  'healthFirstFraming', 'confidentiality', 'counsellorBoundary',
+  'gradualReturnCapability', 'suitableDuties', 'keepInTouchPlan'
+];
+
+const VALID_SOP_STATUS = ['pass', 'partial', 'na'];
+
+function sanitizeSopItem(item) {
+  const raw = item || {};
+  return {
+    status: VALID_SOP_STATUS.includes(raw.status) ? raw.status : 'na',
+    evidence: typeof raw.evidence === 'string' ? raw.evidence : '',
+    reference: typeof raw.reference === 'string' ? raw.reference : '',
+  };
+}
 
 function validateEvaluation(evaluation) {
   const errors = [];
@@ -56,6 +73,9 @@ function sanitizeEvaluation(evaluation) {
       lumpSumPayments: rawBreakdown.lumpSumPayments || defaultBreakdownItem,
       legalReference: rawBreakdown.legalReference || defaultBreakdownItem,
     },
+    sopBreakdown: Object.fromEntries(
+      SOP_BREAKDOWN_KEYS.map((k) => [k, sanitizeSopItem((evaluation.sopBreakdown || {})[k])])
+    ),
     sentiment: Array.isArray(evaluation.sentiment) ? evaluation.sentiment : [],
     coaching: {
       strengths: Array.isArray(evaluation.coaching?.strengths) ? evaluation.coaching.strengths : [],
@@ -65,4 +85,4 @@ function sanitizeEvaluation(evaluation) {
   };
 }
 
-module.exports = { SCORE_FIELDS, validateEvaluation, sanitizeEvaluation };
+module.exports = { SCORE_FIELDS, SOP_BREAKDOWN_KEYS, validateEvaluation, sanitizeEvaluation };

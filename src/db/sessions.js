@@ -3,8 +3,8 @@ const pool = require('./pool');
 async function insertSession(sessionData, client) {
   const db = client || pool;
   const result = await db.query(
-    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sentiment, coaching, duration_seconds, audio_file_path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sop_breakdown, sentiment, coaching, duration_seconds, audio_file_path)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id, created_at`,
     [
       sessionData.scenarioId,
@@ -13,6 +13,7 @@ async function insertSession(sessionData, client) {
       sessionData.overallScore,
       JSON.stringify(sessionData.scores),
       JSON.stringify(sessionData.rtwasaBreakdown || {}),
+      JSON.stringify(sessionData.sopBreakdown || {}),
       JSON.stringify(sessionData.sentiment),
       JSON.stringify(sessionData.coaching),
       sessionData.durationSeconds,

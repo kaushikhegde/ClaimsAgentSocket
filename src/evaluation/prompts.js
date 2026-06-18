@@ -37,7 +37,23 @@ EVALUATE the agent's performance using this rubric. Score each dimension 0-100:
    - Legal Reference: Referenced the Return to Work Act 2014 where appropriate
    Score: 0 if none mentioned, ~15-17 points per item addressed correctly, up to 100 for comprehensive coverage.
 
-OVERALL SCORE: Weighted average — Empathy (18%), Compliance (13%), Information Gathering (18%), Question Quality (13%), Tone (8%), Talk/Listen (8%), Filler Words (4%), Response Time (4%), RTWASA Compliance (14%).
+10. SOP COMPLIANCE (0-100): Assess the agent against the Safe Work Australia SOP "Managing the relationship with an injured or ill worker during return to work". For EACH of the 9 behaviours below, assign a status:
+   - "pass": clearly demonstrated
+   - "partial": partially or weakly demonstrated
+   - "na": could not reasonably apply in this call — do NOT penalise the agent for these
+   Behaviours:
+   - earlySupportiveContact: Early, supportive contact framed as checking in, not interrogating
+   - careBeforeInjury: Asked how the worker IS before drilling into injury/claim details
+   - openEndedListening: Used open-ended questions and active listening; let the worker guide
+   - healthFirstFraming: Made clear recovery/health (physical and mental) is the priority
+   - confidentiality: Assured privacy; did not suggest disclosing details to others without consent
+   - counsellorBoundary: For psychological injury, offered support without overstepping into counselling; avoided assumptions (e.g. asked "what does that mean for you?")
+   - gradualReturnCapability: Discussed a gradual return; focused on what the worker CAN do; reassured they don't need to be 100%
+   - suitableDuties: Explored modified/suitable duties; deferred to health professional advice / certificate of capacity
+   - keepInTouchPlan: Agreed a contact preference/frequency; set a next check-in or realistic goals
+   Compute scores.sopCompliance = round((passes + 0.5 * partials) / applicable * 100), where applicable = the number of behaviours NOT marked "na". If all 9 are "na", scores.sopCompliance = 0. For each behaviour give a short evidence quote and a timestamp reference (empty strings if na).
+
+OVERALL SCORE: Weighted average — Empathy (16%), Compliance (10%), Information Gathering (16%), Question Quality (12%), Tone (7%), Talk/Listen (7%), Filler Words (4%), Response Time (4%), RTWASA Compliance (12%), SOP Compliance (12%).
 
 SENTIMENT ANALYSIS: Track the emotional arc of the conversation. Provide 6-10 data points evenly spaced through the conversation:
 - agentTone: -1.0 (cold/negative) to 1.0 (warm/positive)
@@ -60,7 +76,8 @@ Return ONLY valid JSON in this exact format:
     "talkListenRatio": <number>,
     "fillerWords": <number>,
     "responseTime": <number>,
-    "rtwasaCompliance": <number>
+    "rtwasaCompliance": <number>,
+    "sopCompliance": <number>
   },
   "rtwasaBreakdown": {
     "incomeSupport": {"mentioned": <boolean>, "details": "<what was said or empty>"},
@@ -69,6 +86,17 @@ Return ONLY valid JSON in this exact format:
     "seriousInjuryClassification": {"mentioned": <boolean>, "details": "<what was said or empty>"},
     "lumpSumPayments": {"mentioned": <boolean>, "details": "<what was said or empty>"},
     "legalReference": {"mentioned": <boolean>, "details": "<what was said or empty>"}
+  },
+  "sopBreakdown": {
+    "earlySupportiveContact": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "careBeforeInjury": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "openEndedListening": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "healthFirstFraming": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "confidentiality": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "counsellorBoundary": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "gradualReturnCapability": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "suitableDuties": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"},
+    "keepInTouchPlan": {"status": "<pass|partial|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"}
   },
   "sentiment": [
     {"timestamp": <seconds>, "agentTone": <-1 to 1>, "customerMood": <-1 to 1>}
