@@ -44,19 +44,21 @@ function isConfigured() {
   return getContainerClient() !== null;
 }
 
-/**
- * Upload a WAV buffer to claims-agent/<name>. Returns the stored blob name
- * (e.g. "claims-agent/123-hearing-loss.wav") to persist in the DB.
- */
-async function uploadAudio(name, buffer) {
+/** Upload any buffer to an exact blob name with the given content type. Returns the blob name. */
+async function uploadBlob(blobName, buffer, contentType) {
   const container = getContainerClient();
   if (!container) throw new Error('Azure Blob storage is not configured');
-  const blobName = `${PREFIX}/${name}`;
   const blockBlob = container.getBlockBlobClient(blobName);
-  await blockBlob.uploadData(buffer, {
-    blobHTTPHeaders: { blobContentType: 'audio/wav' },
-  });
+  await blockBlob.uploadData(buffer, { blobHTTPHeaders: { blobContentType: contentType } });
   return blobName;
+}
+
+/**
+ * Upload a recording to claims-agent/<name>. Returns the stored blob name
+ * (e.g. "claims-agent/123-hearing-loss.mp3") to persist in the DB.
+ */
+async function uploadAudio(name, buffer, contentType = 'audio/wav') {
+  return uploadBlob(`${PREFIX}/${name}`, buffer, contentType);
 }
 
 /** Fetch blob size (used to build Content-Range headers). */
@@ -87,6 +89,7 @@ async function audioExists(blobName) {
 module.exports = {
   PREFIX,
   isConfigured,
+  uploadBlob,
   uploadAudio,
   getAudioProperties,
   downloadAudio,

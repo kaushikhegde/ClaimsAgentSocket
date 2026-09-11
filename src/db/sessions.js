@@ -3,8 +3,8 @@ const pool = require('./pool');
 async function insertSession(sessionData, client) {
   const db = client || pool;
   const result = await db.query(
-    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sop_breakdown, sentiment, coaching, duration_seconds, audio_file_path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sop_breakdown, sentiment, coaching, duration_seconds, audio_file_path, persona_id, el_conversation_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id, created_at`,
     [
       sessionData.scenarioId,
@@ -18,17 +18,22 @@ async function insertSession(sessionData, client) {
       JSON.stringify(sessionData.coaching),
       sessionData.durationSeconds,
       sessionData.audioFilePath || null,
+      sessionData.personaId || null,
+      sessionData.elConversationId || null,
     ]
   );
   return result.rows[0];
 }
 
+// persona_name comes from the personas table (sessions before migration 005 have no persona_id → null).
+const SESSION_JOIN = `
+  FROM training_sessions ts
+  LEFT JOIN scenarios s ON ts.scenario_id = s.id
+  LEFT JOIN personas p ON ts.persona_id = p.id`;
+
 async function getSessionById(id) {
   const result = await pool.query(
-    `SELECT ts.*, s.name as scenario_name, s.persona_name, s.description as scenario_description
-     FROM training_sessions ts
-     LEFT JOIN scenarios s ON ts.scenario_id = s.id
-     WHERE ts.id = $1`,
+    `SELECT ts.*, s.name as scenario_name, p.name as persona_name, s.description as scenario_description ${SESSION_JOIN} WHERE ts.id = $1`,
     [id]
   );
   return result.rows[0];
@@ -36,11 +41,7 @@ async function getSessionById(id) {
 
 async function getAllSessions(limit = 50, offset = 0) {
   const result = await pool.query(
-    `SELECT ts.*, s.name as scenario_name, s.persona_name
-     FROM training_sessions ts
-     LEFT JOIN scenarios s ON ts.scenario_id = s.id
-     ORDER BY ts.created_at DESC
-     LIMIT $1 OFFSET $2`,
+    `SELECT ts.*, s.name as scenario_name, p.name as persona_name ${SESSION_JOIN} ORDER BY ts.created_at DESC LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
   return result.rows;
@@ -48,12 +49,7 @@ async function getAllSessions(limit = 50, offset = 0) {
 
 async function getSessionsByScenario(scenarioId, limit = 50) {
   const result = await pool.query(
-    `SELECT ts.*, s.name as scenario_name, s.persona_name
-     FROM training_sessions ts
-     LEFT JOIN scenarios s ON ts.scenario_id = s.id
-     WHERE ts.scenario_id = $1
-     ORDER BY ts.created_at DESC
-     LIMIT $2`,
+    `SELECT ts.*, s.name as scenario_name, p.name as persona_name ${SESSION_JOIN} WHERE ts.scenario_id = $1 ORDER BY ts.created_at DESC LIMIT $2`,
     [scenarioId, limit]
   );
   return result.rows;

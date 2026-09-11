@@ -1,12 +1,12 @@
 {
   "name": "voice-insurance-claims-agent",
   "version": "1.0.0",
-  "description": "Voice-based insurance claims intake agent using Gemini Live API",
+  "description": "Voice-based insurance claims training platform using ElevenLabs Agents",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "migrate": "node -e \"const pool=require('./src/db/pool.js');const fs=require('fs');(async()=>{const files=fs.readdirSync('./migrations').sort();for(const f of files){console.log('Running '+f);await pool.query(fs.readFileSync('./migrations/'+f,'utf8'));}console.log('All migrations complete');process.exit(0)})().catch(e=>{console.error(e);process.exit(1)})\"",
+    "migrate": "node scripts/migrate.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [],
@@ -17,7 +17,7 @@
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
-    "pg": "^8.20.0",
-    "ws": "^8.20.0"
+    "multer": "^2.0.2",
+    "pg": "^8.20.0"
   }
 }

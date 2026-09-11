@@ -1,17 +1,11 @@
 const express = require('express');
 const http = require('http');
-const { WebSocketServer } = require('ws');
 const path = require('path');
 const config = require('./config');
-const { handleConnection } = require('./ws/handler');
 const pool = require('./db/pool');
 const logger = require('./utils/logger');
 const blobStorage = require('./storage/blob');
 const { getAllSessions, getSessionById, getSessionsByScenario, getAgentStats, getScoreHistory } = require('./db/sessions');
-const { getAllScenarios: getScenarioDefinitions } = require('./training/scenarios');
-
-const MAX_CONNECTIONS = 20;
-const MAX_PAYLOAD_BYTES = 512 * 1024; // 512KB per message
 
 const app = express();
 const server = http.createServer(app);
@@ -20,27 +14,25 @@ const server = http.createServer(app);
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+app.use(express.json({ limit: '1mb' }));
 
-// Serve static files (HTML client)
+// Serve static files
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', connections: wss.clients.size, timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API Routes
-app.get('/api/scenarios', async (req, res) => {
-  try {
-    const scenarios = getScenarioDefinitions();
-    res.json(scenarios);
-  } catch (err) {
-    logger.error('Failed to get scenarios', err);
-    res.status(500).json({ error: 'Failed to fetch scenarios' });
-  }
-});
+// Feature routers
+app.use('/api/training', require('./routes/training'));
+app.use('/api/scenarios', require('./routes/scenarios'));
+app.use('/api/voices', require('./routes/voices').voicesRouter);
+app.use('/api/elevenlabs', require('./routes/voices').elevenLabsRouter);
 
 app.get('/api/sessions', async (req, res) => {
   try {
@@ -59,7 +51,6 @@ app.get('/api/sessions/:id', async (req, res) => {
   try {
     const session = await getSessionById(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    // Also get transcript and conversation logs
     const transcript = await pool.query('SELECT * FROM transcripts WHERE session_id = $1', [req.params.id]);
     const logs = await pool.query('SELECT * FROM conversation_logs WHERE session_id = $1 ORDER BY timestamp', [req.params.id]);
     res.json({ ...session, transcript: transcript.rows[0], logs: logs.rows });
@@ -69,6 +60,8 @@ app.get('/api/sessions/:id', async (req, res) => {
   }
 });
 
+const AUDIO_TYPES = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
+
 app.get('/api/sessions/:id/audio', async (req, res) => {
   try {
     const session = await getSessionById(req.params.id);
@@ -76,6 +69,7 @@ app.get('/api/sessions/:id/audio', async (req, res) => {
       return res.status(404).json({ error: 'Audio not found' });
     }
     const stored = session.audio_file_path;
+    const contentType = AUDIO_TYPES[path.extname(stored).toLowerCase()] || 'application/octet-stream';
     const range = req.headers.range;
 
     // Audio is Azure-only and lives under claims-agent/. Anything else (legacy
@@ -96,14 +90,14 @@ app.get('/api/sessions/:id/audio', async (req, res) => {
         'Content-Range': `bytes ${start}-${end}/${contentLength}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
-        'Content-Type': 'audio/wav',
+        'Content-Type': contentType,
       });
       stream.pipe(res);
     } else {
       const stream = await blobStorage.downloadAudio(stored);
       res.writeHead(200, {
         'Content-Length': contentLength,
-        'Content-Type': 'audio/wav',
+        'Content-Type': contentType,
         'Accept-Ranges': 'bytes',
       });
       stream.pipe(res);
@@ -126,46 +120,19 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// C2: WebSocket server with maxPayload limit
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_PAYLOAD_BYTES });
-
-wss.on('connection', (ws) => {
-  // C2: Reject if too many connections
-  if (wss.clients.size > MAX_CONNECTIONS) {
-    logger.warn(`Connection rejected: limit of ${MAX_CONNECTIONS} reached`);
-    ws.close(1013, 'Server is at capacity');
-    return;
-  }
-  handleConnection(ws);
-});
-
 server.listen(config.port, () => {
   logger.info(`Server running on http://localhost:${config.port}`);
-  logger.info('WebSocket endpoint: ws://localhost:' + config.port + '/ws');
 });
 
-// M6: Graceful shutdown
+// Graceful shutdown
 function shutdown(signal) {
   logger.info(`${signal} received, shutting down gracefully...`);
-
-  // Stop accepting new connections
-  wss.close(() => {
-    logger.info('WebSocket server closed');
-  });
-
-  // Close all existing WS connections
-  for (const client of wss.clients) {
-    client.close(1001, 'Server shutting down');
-  }
-
   server.close(async () => {
     logger.info('HTTP server closed');
     await pool.end();
     logger.info('Database pool drained');
     process.exit(0);
   });
-
-  // Force exit after 10s
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);
