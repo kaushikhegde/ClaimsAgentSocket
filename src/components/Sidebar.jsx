@@ -7,6 +7,7 @@ import {
   Clock,
   Users,
   LogOut,
+  Wrench,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 
@@ -15,7 +16,8 @@ const navSections = [
     label: 'Main',
     items: [
       { to: '/', icon: LayoutGrid, label: 'Dashboard', end: true },
-      { to: '/scenarios', icon: FileText, label: 'Scenarios', badge: '2' },
+      { to: '/scenarios', icon: FileText, label: 'Scenarios' },
+      { to: '/admin/scenarios', icon: Wrench, label: 'Scenario Builder' },
     ],
   },
   {

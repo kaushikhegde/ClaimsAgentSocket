@@ -11,6 +11,8 @@ import SessionDetail from './pages/SessionDetail';
 import Coaching from './pages/Coaching';
 import Leaderboard from './pages/Leaderboard';
 import Training from './pages/Training';
+import ScenarioList from './pages/admin/ScenarioList';
+import ScenarioEditor from './pages/admin/ScenarioEditor';
 
 export default function App() {
   return (
@@ -26,6 +28,9 @@ export default function App() {
             <Route path="/performance" element={<Performance />} />
             <Route path="/coaching" element={<Coaching />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/admin/scenarios" element={<ScenarioList />} />
+            <Route path="/admin/scenarios/new" element={<ScenarioEditor />} />
+            <Route path="/admin/scenarios/:id" element={<ScenarioEditor />} />
           </Route>
           <Route
             path="/training/:scenarioId"

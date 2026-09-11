@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiUrl } from '../api';
-import { useNavigate } from 'react-router-dom';
-import { Clock, ArrowRight } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Clock, ArrowRight, FileText } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
 
 const MaleAvatar = () => (
@@ -64,57 +64,18 @@ const DIFFICULTY_BADGE = {
   advanced: 'bg-red-400/10 text-red-400',
 };
 
-const FALLBACK_SCENARIOS = [
-  {
-    id: 'chest-injury',
-    name: 'Chest Injury Claim',
-    description: 'Injured worker reporting severe chest pain from a warehouse lifting incident.',
-    difficulty: 'beginner',
-    maxDurationSeconds: 180,
-    personas: [
-      { name: 'Marcus Johnson', gender: 'male', emotionalState: 'distressed, in pain, worried about finances' },
-      { name: 'Sarah Mitchell', gender: 'female', emotionalState: 'anxious, scared, confused about the process' },
-      { name: 'David Nguyen', gender: 'male', emotionalState: 'frustrated, angry at management' },
-    ],
-  },
-  {
-    id: 'hearing-loss',
-    name: 'Noise-Induced Hearing Loss',
-    description: 'Factory worker filing claim for gradual hearing deterioration over 5 years of machinery exposure.',
-    difficulty: 'intermediate',
-    maxDurationSeconds: 180,
-    personas: [
-      { name: 'Linda Torres', gender: 'female', emotionalState: 'frustrated, confused about process, somewhat angry at employer' },
-      { name: 'James Kowalski', gender: 'male', emotionalState: 'worried about career, quiet and stoic but deeply concerned' },
-      { name: 'Priya Desai', gender: 'female', emotionalState: 'articulate but frustrated, feels let down by employer' },
-    ],
-  },
-  {
-    id: 'physical-injury',
-    name: 'Physical Injury',
-    description: 'Construction site fall resulting in multiple fractures.',
-    difficulty: 'advanced',
-    maxDurationSeconds: 180,
-    personas: [
-      { name: 'Robert Williams', gender: 'male', emotionalState: 'angry, demanding, scared about finances' },
-      { name: 'Elena Vasquez', gender: 'female', emotionalState: 'scared, defensive, worried employer will blame her' },
-      { name: 'Tyrone Jacobs', gender: 'male', emotionalState: 'in pain, groggy from medication, overwhelmed' },
-    ],
-  },
-];
-
 export default function Scenarios() {
   const navigate = useNavigate();
-  const [scenarios, setScenarios] = useState(FALLBACK_SCENARIOS);
+  const [scenarios, setScenarios] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [mode, setMode] = useState('scripted');
 
   useEffect(() => {
     fetch(apiUrl('/api/scenarios'))
       .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) setScenarios(data);
-      })
-      .catch(() => {});
+      .then((data) => { if (Array.isArray(data)) setScenarios(data); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
   return (
@@ -153,6 +114,13 @@ export default function Scenarios() {
         </div>
       </div>
 
+      {loaded && scenarios.length === 0 && (
+        <GlassCard hover={false} className="p-8 text-center">
+          <p className="text-sm text-gray-500">No scenarios yet.</p>
+          <Link to="/admin/scenarios/new" className="inline-block mt-3 text-xs font-medium text-[#464e7e]">Create one in Scenario Builder →</Link>
+        </GlassCard>
+      )}
+
       {/* Scenario Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {scenarios.map((s) => {
@@ -172,6 +140,11 @@ export default function Scenarios() {
 
               <h3 className="text-base font-semibold text-gray-900 mb-1.5">{s.name}</h3>
               <p className="text-xs text-gray-500 leading-relaxed flex-1">{s.description}</p>
+              {s.documentCount > 0 && (
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-gray-400">
+                  <FileText size={11} /> {s.documentCount} supporting document{s.documentCount === 1 ? '' : 's'}
+                </p>
+              )}
 
               {mode === 'scripted' && persona.name && (
                 <div className="mt-3 p-2.5 rounded-lg bg-gray-50 border border-gray-200">

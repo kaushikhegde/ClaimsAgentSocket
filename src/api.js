@@ -16,3 +16,29 @@ export const wsUrl = (path = '/ws') => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
 };
+
+export class ApiError extends Error {
+  constructor(status, message, data) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+/** fetch + JSON with a consistent error shape ({ error } bodies become ApiError.message). */
+export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}) {
+  const init = { method, headers: { ...headers } };
+  if (body instanceof FormData) {
+    init.body = body;
+  } else if (body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(apiUrl(path), init);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+  if (!res.ok) throw new ApiError(res.status, (data && data.error) || `Request failed (${res.status})`, data);
+  return data;
+}

@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Mic, MicOff, Phone, PhoneOff, Clock, AlertCircle, User, Bot } from 'lucide-react';
+import { ConversationProvider } from '@elevenlabs/react';
+import { Mic, MicOff, Phone, PhoneOff, Clock, AlertCircle, User, Bot, FileText } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
-import { useAudio } from '../hooks/useAudio';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useTrainingCall } from '../hooks/useTrainingCall';
 import { scoreLabel } from '../scoreLabels';
 
 /* ─── Avatar Components ──────────────────────────────────────── */
@@ -39,32 +39,6 @@ const FemaleAvatar = () => (
   </svg>
 );
 
-/* ─── Scenario Data ───────────────────────────────────────────── */
-
-const SCENARIOS = {
-  'chest-injury': {
-    id: 'chest-injury',
-    title: 'Chest Injury Claim',
-    type: 'Scripted',
-    category: 'Chest Injury',
-    duration: 180,
-  },
-  'hearing-loss': {
-    id: 'hearing-loss',
-    title: 'Noise-Induced Hearing Loss',
-    type: 'Scripted',
-    category: 'Hearing Loss',
-    duration: 180,
-  },
-  'physical-injury': {
-    id: 'physical-injury',
-    title: 'Physical Injury',
-    type: 'Scripted',
-    category: 'Physical Injury',
-    duration: 180,
-  },
-};
-
 const DEFAULT_PERSONA = { name: 'Customer', gender: 'male', emotionalState: '' };
 
 /* ─── Format Time ─────────────────────────────────────────────── */
@@ -78,158 +52,52 @@ function formatTime(seconds) {
 /* ─── Training Page ───────────────────────────────────────────── */
 
 export default function Training() {
+  return (
+    <ConversationProvider>
+      <TrainingCall />
+    </ConversationProvider>
+  );
+}
+
+function TrainingCall() {
   const { scenarioId } = useParams();
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') || 'scripted';
   const navigate = useNavigate();
-  const scenario = SCENARIOS[scenarioId];
-
-  const audioHooksRef = useRef(null);
-
-  const {
-    status,
-    setStatus,
-    transcript,
-    timeRemaining,
-    setTimeRemaining,
-    result,
-    setResult,
-    persona: serverPersona,
-    connect,
-    endSession,
-    disconnect,
-    wsRef,
-  } = useWebSocket({
-    onAudio: (data) => {
-      // Mute mic while Gemini speaks
-      if (audioHooksRef.current && !audioHooksRef.current._playbackStarted) {
-        audioHooksRef.current._playbackStarted = true;
-        audioHooksRef.current.muteForPlayback();
-      }
-      audioHooksRef.current?.playAudio(data);
-    },
-    onGreetingDone: () => {
-      // Customer finished opening statement — start capturing agent audio
-      audioHooksRef.current?.startProcessing();
-      audioHooksRef.current?.scheduleUnmute();
-      audioHooksRef.current._playbackStarted = false;
-    },
-    onTurnComplete: () => {
-      // Gemini finished a turn — unmute mic after audio drains
-      audioHooksRef.current?.scheduleUnmute();
-      audioHooksRef.current._playbackStarted = false;
-    },
-  });
-
-  const {
-    isMuted,
-    startCapture,
-    startProcessing,
-    stopCapture,
-    toggleMute,
-    playAudio,
-    muteForPlayback,
-    scheduleUnmute,
-  } = useAudio(wsRef);
-
-  // Keep audioHooksRef in sync
-  useEffect(() => {
-    audioHooksRef.current = { playAudio, muteForPlayback, scheduleUnmute, startProcessing, _playbackStarted: false };
-  }, [playAudio, muteForPlayback, scheduleUnmute, startProcessing]);
-
   const transcriptEndRef = useRef(null);
-  const timerRef = useRef(null);
-  const [localTime, setLocalTime] = useState(scenario?.duration || 180);
-  const [statusText, setStatusText] = useState('Waiting for call to begin...');
+
+  const {
+    phase, transcript, scenario, persona, result, errorMessage, timeRemaining,
+    mode: agentMode, isMuted, setMuted, start, end, reset,
+  } = useTrainingCall();
 
   // Auto-scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
 
-  // Timer countdown when active
-  useEffect(() => {
-    if (status === 'active') {
-      timerRef.current = setInterval(() => {
-        setLocalTime((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            endSession();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [status, endSession]);
+  const statusText =
+    phase === 'active' && agentMode === 'speaking' ? 'Customer is speaking...'
+    : phase === 'active' && isMuted ? 'Microphone muted'
+    : phase === 'active' ? 'Listening...'
+    : phase === 'connecting' ? 'Connecting...'
+    : phase === 'processing' ? 'Evaluating your performance...'
+    : 'Waiting for call to begin...';
 
-  // Sync WS time warnings
-  useEffect(() => {
-    if (timeRemaining < localTime) {
-      setLocalTime(timeRemaining);
-    }
-  }, [timeRemaining]);
-
-  // Status text updates
-  useEffect(() => {
-    if (status === 'active' && !isMuted) setStatusText('Listening...');
-    else if (status === 'active' && isMuted) setStatusText('Customer is speaking...');
-    else if (status === 'connecting') setStatusText('Connecting...');
-    else if (status === 'processing') setStatusText('Evaluating your performance...');
-  }, [status, isMuted]);
-
-  // Handle start
-  const handleStart = useCallback(async () => {
-    const micGranted = await startCapture();
-    if (!micGranted) {
-      setStatusText('Microphone access denied. Please allow microphone access and try again.');
-      return;
-    }
-    connect(scenarioId, mode);
-  }, [scenarioId, mode, connect, startCapture]);
-
-  // Handle end call
-  const handleEndCall = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    stopCapture();
-    endSession();
-  }, [stopCapture, endSession]);
-
-  // Handle navigate to review
+  const handleStart = useCallback(() => start(scenarioId, mode, 'Sarah Kim'), [start, scenarioId, mode]);
+  const handleEndCall = useCallback(() => end(), [end]);
   const handleViewReview = useCallback(() => {
-    disconnect();
     navigate(`/sessions/${result?.sessionId || 'latest'}`);
-  }, [disconnect, navigate, result]);
+  }, [navigate, result]);
 
-  // Unknown scenario
-  if (!scenario) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <GlassCard className="p-8 text-center max-w-md">
-          <AlertCircle size={48} className="text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Scenario Not Found</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            The training scenario "{scenarioId}" doesn't exist.
-          </p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-5 py-2.5 rounded-lg bg-[#464e7e] text-sm font-medium text-white"
-          >
-            Back to Dashboard
-          </button>
-        </GlassCard>
-      </div>
-    );
-  }
-
-  const timeWarning = localTime <= 30;
-  const progress = ((scenario.duration - localTime) / scenario.duration) * 100;
-
-  const activePersona = serverPersona || DEFAULT_PERSONA;
+  const status = phase;
+  const maxDuration = scenario?.maxDurationSeconds || 180;
+  const timeWarning = timeRemaining <= 30;
+  const progress = ((maxDuration - timeRemaining) / maxDuration) * 100;
+  const activePersona = persona || DEFAULT_PERSONA;
   const PersonaAvatar = activePersona.gender === 'female' ? FemaleAvatar : MaleAvatar;
+  const modeLabel = mode === 'freestyle' ? 'Freestyle' : 'Scripted';
+  const scenarioLabel = scenario?.name || 'Training';
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 flex flex-col">
@@ -248,16 +116,8 @@ export default function Training() {
           {status === 'active' && (
             <div className="flex items-center gap-3">
               <div className="relative">
-                {/* Progress ring */}
                 <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
-                  <circle
-                    cx="20"
-                    cy="20"
-                    r="17"
-                    fill="none"
-                    stroke="rgba(0,0,0,0.06)"
-                    strokeWidth="2.5"
-                  />
+                  <circle cx="20" cy="20" r="17" fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="2.5" />
                   <circle
                     cx="20"
                     cy="20"
@@ -283,7 +143,7 @@ export default function Training() {
                   timeWarning ? 'text-red-400 animate-pulse' : 'text-gray-900'
                 }`}
               >
-                {formatTime(localTime)}
+                {formatTime(timeRemaining)}
               </span>
             </div>
           )}
@@ -291,7 +151,7 @@ export default function Training() {
           {/* Right: Scenario pill */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-200">
             <span className="text-xs text-gray-600">
-              {scenario.category} · {scenario.type}
+              {scenarioLabel} · {modeLabel}
             </span>
           </div>
         </div>
@@ -312,8 +172,13 @@ export default function Training() {
                     You're speaking with {activePersona.name}
                   </p>
                   <span className="shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[#464e7e]/10 text-[#464e7e]">
-                    {scenario.type}
+                    {modeLabel}
                   </span>
+                  {scenario?.documentCount > 0 && (
+                    <span className="shrink-0 inline-flex items-center gap-1 text-[10px] text-gray-400">
+                      <FileText size={11} /> {scenario.documentCount} document{scenario.documentCount === 1 ? '' : 's'}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">{activePersona.emotionalState}</p>
               </div>
@@ -326,7 +191,6 @@ export default function Training() {
             className="flex-1 p-4 overflow-y-auto min-h-[300px] max-h-[calc(100vh-320px)]"
           >
             {status === 'idle' || status === 'connecting' ? (
-              /* Empty / Pre-start state */
               <div className="h-full flex flex-col items-center justify-center gap-4">
                 {status === 'idle' ? (
                   <>
@@ -336,7 +200,7 @@ export default function Training() {
                     <div className="text-center">
                       <p className="text-gray-900 font-medium mb-1">Ready to begin?</p>
                       <p className="text-xs text-gray-500 max-w-xs">
-                        You'll be connected with {activePersona.name} for a {formatTime(scenario.duration)} training session.
+                        You'll be connected with a customer for a {formatTime(maxDuration)} training session.
                       </p>
                     </div>
                     <button
@@ -354,7 +218,6 @@ export default function Training() {
                 )}
               </div>
             ) : (
-              /* Active transcript */
               <div className="space-y-3">
                 {transcript.length === 0 && status === 'active' && (
                   <div className="flex items-center justify-center py-12 gap-2">
@@ -365,10 +228,7 @@ export default function Training() {
                 {transcript.map((msg, i) => {
                   const isAgent = msg.role === 'agent';
                   return (
-                    <div
-                      key={i}
-                      className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}
-                    >
+                    <div key={i} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
                       <div
                         className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                           isAgent
@@ -390,17 +250,10 @@ export default function Training() {
                             {isAgent ? 'You (Agent)' : activePersona.name}
                           </span>
                           {msg.timestamp && (
-                            <span className="text-[10px] text-gray-300 ml-auto">
-                              {msg.timestamp}
-                            </span>
+                            <span className="text-[10px] text-gray-300 ml-auto">{msg.timestamp}</span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-800 leading-relaxed">
-                          {msg.text}
-                          {msg.streaming && (
-                            <span className="inline-block w-1.5 h-4 bg-[#464e7e]/60 ml-0.5 animate-pulse rounded-sm" />
-                          )}
-                        </p>
+                        <p className="text-sm text-gray-800 leading-relaxed">{msg.text}</p>
                       </div>
                     </div>
                   );
@@ -413,18 +266,13 @@ export default function Training() {
           {/* Status Bar */}
           {status === 'active' && (
             <div className="flex items-center gap-3 mt-3 px-1">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  status === 'active' ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]' : 'bg-red-400'
-                }`}
-              />
+              <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.4)]" />
               <span className="text-xs text-gray-500">{statusText}</span>
-              {/* Simple audio level indicator */}
               <div className="flex items-end gap-[2px] ml-auto h-3">
                 {[0.4, 0.7, 1, 0.6, 0.3].map((h, i) => (
                   <div
                     key={i}
-                    className="w-[3px] rounded-full bg-[#464e7e]/40"
+                    className={`w-[3px] rounded-full ${agentMode === 'speaking' ? 'bg-[#464e7e]/70 animate-pulse' : 'bg-[#464e7e]/40'}`}
                     style={{ height: `${h * 12}px` }}
                   />
                 ))}
@@ -438,25 +286,21 @@ export default function Training() {
       {status === 'active' && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-t border-gray-200">
           <div className="flex items-center justify-center gap-6 py-4">
-            {/* Mic Button */}
             <button
-              onClick={toggleMute}
+              onClick={() => setMuted(!isMuted)}
+              aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
               className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 ${
                 isMuted
                   ? 'bg-red-500/20 border border-red-500/30 hover:bg-red-500/30'
                   : 'bg-[#464e7e] shadow-lg shadow-[#464e7e]/25 hover:brightness-110'
               }`}
             >
-              {isMuted ? (
-                <MicOff size={24} className="text-red-400" />
-              ) : (
-                <Mic size={24} className="text-white" />
-              )}
+              {isMuted ? <MicOff size={24} className="text-red-400" /> : <Mic size={24} className="text-white" />}
             </button>
 
-            {/* End Call Button */}
             <button
               onClick={handleEndCall}
+              aria-label="End call"
               className="w-12 h-12 rounded-full flex items-center justify-center bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 transition-all duration-200"
             >
               <PhoneOff size={20} className="text-red-400" />
@@ -471,27 +315,15 @@ export default function Training() {
           {status === 'processing' ? (
             <GlassCard hover={false} className="p-8 text-center max-w-sm">
               <div className="w-14 h-14 rounded-full border-[2.5px] border-[#464e7e]/20 border-t-[#464e7e] animate-spin mx-auto mb-5" />
-              <h2 className="text-lg font-semibold text-gray-900 mb-1.5">
-                Evaluating your performance...
-              </h2>
-              <p className="text-xs text-gray-500">
-                Analyzing empathy, compliance, and information gathering
-              </p>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Evaluating your performance...</h2>
+              <p className="text-xs text-gray-500">Analyzing empathy, compliance, and information gathering</p>
             </GlassCard>
           ) : (
             <GlassCard hover={false} className="p-8 max-w-md w-full">
               <div className="text-center mb-6">
-                {/* Score ring */}
                 <div className="relative w-24 h-24 mx-auto mb-4">
                   <svg className="w-24 h-24 -rotate-90" viewBox="0 0 96 96">
-                    <circle
-                      cx="48"
-                      cy="48"
-                      r="42"
-                      fill="none"
-                      stroke="rgba(0,0,0,0.06)"
-                      strokeWidth="5"
-                    />
+                    <circle cx="48" cy="48" r="42" fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="5" />
                     <circle
                       cx="48"
                       cy="48"
@@ -515,28 +347,18 @@ export default function Training() {
                   </span>
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900">Training Complete</h2>
-                <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-                  {result?.summary}
-                </p>
+                <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{result?.summary}</p>
               </div>
 
-              {/* Skill bars */}
               {result?.scores && (
                 <div className="space-y-3 mb-6">
                   {Object.entries(result.scores).map(([key, value]) => (
                     <div key={key} className="flex items-center gap-3">
-                      <span className="w-28 text-xs text-gray-500">
-                        {scoreLabel(key)}
-                      </span>
+                      <span className="w-28 text-xs text-gray-500">{scoreLabel(key)}</span>
                       <div className="flex-1 h-1.5 rounded-full bg-gray-100">
-                        <div
-                          className="h-full rounded-full bg-[#464e7e]"
-                          style={{ width: `${value}%` }}
-                        />
+                        <div className="h-full rounded-full bg-[#464e7e]" style={{ width: `${value}%` }} />
                       </div>
-                      <span className="text-xs font-medium text-gray-900 w-7 text-right">
-                        {value}
-                      </span>
+                      <span className="text-xs font-medium text-gray-900 w-7 text-right">{value}</span>
                     </div>
                   ))}
                 </div>
@@ -559,20 +381,34 @@ export default function Training() {
         </div>
       )}
 
+      {/* ── Empty Overlay ─────────────────────────────────── */}
+      {status === 'empty' && (
+        <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-md flex items-center justify-center">
+          <GlassCard hover={false} className="p-8 text-center max-w-sm">
+            <Phone size={44} className="text-gray-300 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold text-gray-900 mb-1.5">No conversation recorded</h2>
+            <p className="text-xs text-gray-500 mb-5">The call ended before anything was said, so there is nothing to evaluate.</p>
+            <button
+              onClick={reset}
+              className="px-6 py-2.5 rounded-xl bg-[#464e7e] text-sm font-semibold text-white transition hover:brightness-110"
+            >
+              Try Again
+            </button>
+          </GlassCard>
+        </div>
+      )}
+
       {/* ── Error Overlay ─────────────────────────────────── */}
       {status === 'error' && (
         <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-md flex items-center justify-center">
           <GlassCard hover={false} className="p-8 text-center max-w-sm">
             <AlertCircle size={44} className="text-red-400 mx-auto mb-4" />
-            <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Connection Error</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Session Error</h2>
             <p className="text-xs text-gray-500 mb-5">
-              Unable to connect to the training session. This may be a network issue.
+              {errorMessage || 'Unable to connect to the training session. This may be a network issue.'}
             </p>
             <button
-              onClick={() => {
-                disconnect();
-                setStatus('idle');
-              }}
+              onClick={reset}
               className="px-6 py-2.5 rounded-xl bg-[#464e7e] text-sm font-semibold text-white transition hover:brightness-110"
             >
               Try Again
