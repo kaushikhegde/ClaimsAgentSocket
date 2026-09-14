@@ -14,8 +14,8 @@ function sendError(res, err, fallback) {
 
 router.post('/start', async (req, res) => {
   try {
-    const { scenarioId, mode, agentName } = req.body || {};
-    res.json(await startCall({ scenarioId, mode, agentName }));
+    const { scenarioId, mode, agentName, personaId } = req.body || {};
+    res.json(await startCall({ scenarioId, mode, agentName, personaId }));
   } catch (err) {
     sendError(res, err, 'Failed to start training call');
   }

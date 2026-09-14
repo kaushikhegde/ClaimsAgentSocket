@@ -35,6 +35,7 @@ function rowToPersona(r) {
     backstory: r.backstory,
     emotionalState: r.emotional_state,
     openingLine: r.opening_line,
+    situationalCues: r.situational_cues || null,
     voiceId: r.voice_id,
     voiceName: r.voice_name,
     sortOrder: r.sort_order,
@@ -102,17 +103,17 @@ async function replacePersonas(scenarioId, personas, client) {
   }
   for (let i = 0; i < personas.length; i++) {
     const p = personas[i];
-    const params = [p.name, p.gender || 'male', p.backstory, p.emotionalState, p.openingLine, p.voiceId || null, p.voiceName || null, i];
+    const params = [p.name, p.gender || 'male', p.backstory, p.emotionalState, p.openingLine, p.voiceId || null, p.voiceName || null, i, p.situationalCues || null];
     if (p.id && existing.rows.some((r) => r.id === p.id)) {
       await client.query(
-        `UPDATE personas SET name=$1, gender=$2, backstory=$3, emotional_state=$4, opening_line=$5, voice_id=$6, voice_name=$7, sort_order=$8
-         WHERE id=$9 AND scenario_id=$10`,
+        `UPDATE personas SET name=$1, gender=$2, backstory=$3, emotional_state=$4, opening_line=$5, voice_id=$6, voice_name=$7, sort_order=$8, situational_cues=$9
+         WHERE id=$10 AND scenario_id=$11`,
         [...params, p.id, scenarioId]
       );
     } else {
       await client.query(
-        `INSERT INTO personas (name, gender, backstory, emotional_state, opening_line, voice_id, voice_name, sort_order, scenario_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        `INSERT INTO personas (name, gender, backstory, emotional_state, opening_line, voice_id, voice_name, sort_order, situational_cues, scenario_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [...params, scenarioId]
       );
     }
@@ -226,7 +227,10 @@ async function purgeStalePendingCalls(maxAgeHours = 2) {
   await pool.query(`DELETE FROM pending_calls WHERE started_at < NOW() - ($1 || ' hours')::interval`, [String(maxAgeHours)]);
 }
 
-/** Trainee-facing view: no answer key (backstory/opening line), no sync internals. */
+/**
+ * Trainee-facing view: no answer key (backstory/opening line), no sync internals.
+ * The builder's "Trainees see" / "Hidden" badges (frontend ScenarioEditor.jsx `Visibility`) mirror this; keep them in sync.
+ */
 function toPublicScenario(s) {
   return {
     id: s.id,

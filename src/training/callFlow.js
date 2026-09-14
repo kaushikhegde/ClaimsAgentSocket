@@ -54,7 +54,7 @@ function mapElevenLabsError(err) {
   return err;
 }
 
-async function startCall({ scenarioId, mode, agentName }, deps) {
+async function startCall({ scenarioId, mode, agentName, personaId }, deps) {
   const d = withDefaults(deps);
   if (!scenarioId || typeof scenarioId !== 'string') throw new CallFlowError(400, 'Missing or invalid scenarioId');
   const trainee = (typeof agentName === 'string' && agentName.trim()) ? agentName.trim().slice(0, 255) : 'default';
@@ -62,15 +62,23 @@ async function startCall({ scenarioId, mode, agentName }, deps) {
   let scenario = await d.db.getScenario(scenarioId);
   if (!scenario) throw new CallFlowError(404, `Unknown scenario: ${scenarioId}`);
   const features = normalizeFeatures(scenario.features);
+  const personas = scenario.personas || [];
+
+  // The builder's "Test this persona" pins a persona; it must belong to this scenario.
+  let pinned = null;
+  if (personaId !== undefined && personaId !== null && personaId !== '') {
+    pinned = typeof personaId === 'string' ? personas.find((p) => p.id === personaId) : null;
+    if (!pinned) throw new CallFlowError(400, 'Unknown persona for this scenario');
+  }
+
   // Scripted-only scenarios depend on persona cues that a freestyle caller would not reproduce.
-  const sessionMode = features.scriptedOnly ? 'scripted' : (VALID_MODES.has(mode) ? mode : 'scripted');
+  const sessionMode = features.scriptedOnly || pinned ? 'scripted' : (VALID_MODES.has(mode) ? mode : 'scripted');
 
   d.db.purgeStalePendingCalls().catch(() => {});
 
-  const personas = scenario.personas || [];
-  const persona = sessionMode === 'scripted' && personas.length > 0
+  const persona = pinned || (sessionMode === 'scripted' && personas.length > 0
     ? personas[Math.floor(d.random() * personas.length)]
-    : null;
+    : null);
 
   try {
     const agentId = await d.sync.ensureAgent(scenario, d);
@@ -81,6 +89,7 @@ async function startCall({ scenarioId, mode, agentName }, deps) {
     const { token, conversationId } = await d.conversations.getConversationToken(d.client, agentId);
     await d.db.insertPendingCall({ conversationId, scenarioId: scenario.id, personaId: persona ? persona.id : null, mode: sessionMode, agentName: trainee });
 
+    // Everything below except dynamicVariables reaches the trainee's browser; the builder's visibility badges mirror it.
     return {
       conversationToken: token,
       conversationId,

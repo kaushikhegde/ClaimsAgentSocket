@@ -73,6 +73,30 @@ describe('startCall', () => {
     assert.ok(/invent a realistic/i.test(out.dynamicVariables.character_instructions));
   });
 
+  it('uses a pinned persona in scripted mode, even when freestyle was asked for', async () => {
+    const { deps, calls } = fakeDeps();
+    const twoPersonas = { ...scenario, personas: [...scenario.personas, { id: 'p2', name: 'Sarah Mitchell', gender: 'female', backstory: 's', emotionalState: 'anxious', openingLine: 'Hello?', voiceId: null }] };
+    deps.db.getScenario = async (id) => (id === scenario.id ? twoPersonas : null);
+    deps.random = () => 0; // the random pick would be p1
+    const out = await startCall({ scenarioId: 'chest-injury', mode: 'freestyle', agentName: 'Scenario test', personaId: 'p2' }, deps);
+    assert.strictEqual(out.persona.id, 'p2');
+    assert.strictEqual(out.mode, 'scripted');
+    assert.strictEqual(out.voiceId, 'v_default');
+    const pending = calls.find((c) => c[0] === 'pending')[1];
+    assert.deepStrictEqual(pending, { conversationId: 'conv_1', scenarioId: 'chest-injury', personaId: 'p2', mode: 'scripted', agentName: 'Scenario test' });
+  });
+
+  it('rejects a persona that does not belong to the scenario', async () => {
+    await assert.rejects(
+      () => startCall({ scenarioId: 'chest-injury', mode: 'scripted', personaId: 'p-other' }, fakeDeps().deps),
+      (e) => e instanceof CallFlowError && e.status === 400 && /Unknown persona/.test(e.message)
+    );
+    await assert.rejects(
+      () => startCall({ scenarioId: 'chest-injury', mode: 'scripted', personaId: 42 }, fakeDeps().deps),
+      (e) => e.status === 400
+    );
+  });
+
   it('404s unknown scenarios and 429s on quota', async () => {
     await assert.rejects(() => startCall({ scenarioId: 'nope', mode: 'scripted' }, fakeDeps().deps), (e) => e instanceof CallFlowError && e.status === 404);
     const quota = fakeDeps({ tokenError: new ElevenLabsError('q', { status: 402, code: 'quota', detail: 'no credits' }) });

@@ -28,11 +28,15 @@ function validatePersona(p, i) {
   const emotionalState = str(p.emotionalState, 255);
   if (!emotionalState) return fail(`personas[${i}].emotionalState`, 'Emotional state is required');
   const openingLine = str(p.openingLine, 500) || null;
+  if (typeof p.situationalCues === 'string' && p.situationalCues.trim().length > 2000) {
+    return fail(`personas[${i}].situationalCues`, 'Situational cues must be 2000 characters or fewer');
+  }
   return {
     ok: true,
     value: {
       id: typeof p.id === 'string' && p.id ? p.id : undefined,
       name, gender, backstory, emotionalState,
+      situationalCues: str(p.situationalCues, 2000) || null,
       openingLine: openingLine || 'Hi… yeah, I need to file a claim. I got hurt at work.',
       voiceId: str(p.voiceId, 100) || null,
       voiceName: str(p.voiceName, 255) || null,

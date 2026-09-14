@@ -25,6 +25,13 @@ describe('validateScenarioInput', () => {
     assert.strictEqual(validateScenarioInput({ ...good, personas: [{ ...good.personas[0], name: '' }] }, { isCreate: true }).field, 'personas[0].name');
     assert.strictEqual(validateScenarioInput({ ...good, personas: [{ ...good.personas[0], gender: 'other' }] }, { isCreate: true }).field, 'personas[0].gender');
   });
+  it('keeps optional situational cues and rejects cues over 2000 characters', () => {
+    const withCues = validateScenarioInput({ ...good, personas: [{ ...good.personas[0], situationalCues: '  whispers  ' }] }, { isCreate: true });
+    assert.strictEqual(withCues.value.personas[0].situationalCues, 'whispers');
+    assert.strictEqual(validateScenarioInput(good, { isCreate: true }).value.personas[0].situationalCues, null);
+    const tooLong = validateScenarioInput({ ...good, personas: [{ ...good.personas[0], situationalCues: 'x'.repeat(2001) }] }, { isCreate: true });
+    assert.strictEqual(tooLong.field, 'personas[0].situationalCues');
+  });
   it('ignores id on update', () => {
     const out = validateScenarioInput({ ...good, id: 'ignored' }, { isCreate: false });
     assert.strictEqual(out.ok, true);

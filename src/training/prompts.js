@@ -77,10 +77,13 @@ function buildCharacterInstructions({ mode, persona, claimType }) {
   if (mode === 'freestyle' || !persona) {
     return `Invent a realistic customer persona for a ${claimTypeLabel(claimType)} claim. Give yourself a name, age, occupation, and a detailed backstory. Ensure your backstory has at least one complicating factor (e.g., you lost the police report, you aren't sure exactly when it happened, or the damage is worse than it looks). Decide on an emotional state and stay consistent with it.`;
   }
+  const cues = typeof persona.situationalCues === 'string' && persona.situationalCues.trim()
+    ? `\n- Situational cues (act these out at the moments described): ${persona.situationalCues.trim()}`
+    : '';
   return `Your character:
 - Name: ${persona.name}
 - Background: ${persona.backstory}
-- Emotional state: ${persona.emotionalState}
+- Emotional state: ${persona.emotionalState}${cues}
 
 You are ${persona.name}. Stay in character at ALL times.`;
 }

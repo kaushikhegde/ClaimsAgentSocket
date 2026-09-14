@@ -25,6 +25,15 @@ describe('training prompts', () => {
     assert.ok(text.includes('You are Marcus Johnson'));
   });
 
+  it('includes situational cues only when the persona has them', () => {
+    const without = buildCharacterInstructions({ mode: 'scripted', persona, claimType: 'workplace_injury' });
+    assert.ok(!without.includes('Situational cues'));
+    const withCues = buildCharacterInstructions({ mode: 'scripted', persona: { ...persona, situationalCues: ' Whisper; go quiet at 1 minute. ' }, claimType: 'crisis_support' });
+    assert.ok(withCues.includes('- Situational cues (act these out at the moments described): Whisper; go quiet at 1 minute.'));
+    const blank = buildCharacterInstructions({ mode: 'scripted', persona: { ...persona, situationalCues: '   ' }, claimType: 'crisis_support' });
+    assert.ok(!blank.includes('Situational cues'));
+  });
+
   it('freestyle instructions ask the model to invent a persona for the claim type', () => {
     const text = buildCharacterInstructions({ mode: 'freestyle', persona: null, claimType: 'workplace_injury' });
     assert.ok(/invent a realistic customer persona/i.test(text));
