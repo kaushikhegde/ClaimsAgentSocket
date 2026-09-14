@@ -40,7 +40,7 @@ describe('buildAgentPayload', () => {
   });
 });
 
-function fakeDeps({ scenarioRow, createStatus = 200, patchStatus = 200, voices = [] }) {
+function fakeDeps({ scenarioRow, createStatus = 200, patchStatus = 200, voices = [], missingVoiceIds = [] }) {
   const calls = [];
   const db = {
     scenario: scenarioRow,
@@ -50,8 +50,8 @@ function fakeDeps({ scenarioRow, createStatus = 200, patchStatus = 200, voices =
   };
   const { ElevenLabsError } = require('../src/elevenlabs/client');
   const client = {
-    async post(path, { json }) { calls.push(['POST', path, json]); if (createStatus !== 200) throw new ElevenLabsError('x', { status: createStatus, code: 'upstream', detail: 'boom' }); return { agent_id: 'agent_new' }; },
-    async patch(path, { json }) { calls.push(['PATCH', path, json]); if (patchStatus === 404) throw new ElevenLabsError('x', { status: 404, code: 'not_found' }); return { agent_id: path.split('/').pop() }; },
+    async post(path, { json }) { calls.push(['POST', path, json]); if (missingVoiceIds.includes(json.conversation_config.tts.voice_id)) throw new ElevenLabsError('x', { status: 400, code: 'upstream', detail: `A voice for the voice_id ${json.conversation_config.tts.voice_id} was not found.` }); if (createStatus !== 200) throw new ElevenLabsError('x', { status: createStatus, code: 'upstream', detail: 'boom' }); return { agent_id: 'agent_new' }; },
+    async patch(path, { json }) { calls.push(['PATCH', path, json]); if (patchStatus === 404) throw new ElevenLabsError('x', { status: 404, code: 'not_found' }); if (patchStatus === 401) throw new ElevenLabsError('x', { status: 401, code: 'unauthorized', detail: 'missing the permission convai_write' }); return { agent_id: path.split('/').pop() }; },
     async del(path) { calls.push(['DELETE', path]); },
   };
   const voicesApi = { async listVoices() { return voices; } };
@@ -103,6 +103,38 @@ describe('scenarioSync', () => {
     assert.strictEqual(post[2].conversation_config.tts.voice_id, 'v_au');
   });
 
+  it('prefers a voice matching the personas’ gender, then Australian', async () => {
+    const voices = [
+      { voiceId: 'v_au_m', name: 'Charlie', labels: { accent: 'australian', gender: 'male' } },
+      { voiceId: 'v_us_f', name: 'Rachel', labels: { accent: 'american', gender: 'female' } },
+    ];
+    const female = { ...scenario, defaultVoiceId: null, personas: [{ id: 'p1', gender: 'female' }, { id: 'p2', gender: 'female' }] };
+    assert.strictEqual((await resolveDefaultVoice(female, fakeDeps({ scenarioRow: female, voices }).deps)).voiceId, 'v_us_f');
+    const male = { ...female, personas: [{ id: 'p1', gender: 'male' }] };
+    assert.strictEqual((await resolveDefaultVoice(male, fakeDeps({ scenarioRow: male, voices }).deps)).voiceId, 'v_au_m');
+  });
+
+  it('replaces a default voice missing from the account and retries the sync once', async () => {
+    const voices = [
+      { voiceId: 'v_gone', name: 'Emma', labels: { accent: 'australian', gender: 'female' } }, // listed but excluded
+      { voiceId: 'v_au_m', name: 'Charlie', labels: { accent: 'australian', gender: 'male' } },
+    ];
+    const row = { ...scenario, defaultVoiceId: 'v_gone', defaultVoiceName: 'Emma', elAgentId: 'agent_old', personas: [{ id: 'p1', gender: 'male' }] };
+    const { deps, calls } = fakeDeps({ scenarioRow: row, voices, patchStatus: 404, missingVoiceIds: ['v_gone'] });
+    const out = await syncAgent('chest-injury', deps);
+    assert.deepStrictEqual(out, { ok: true, agentId: 'agent_new', error: null });
+    assert.ok(calls.some((c) => c[0] === 'setDefaultVoice' && c[2] === 'v_au_m' && c[3] === 'Charlie'));
+    const posts = calls.filter((c) => c[0] === 'POST');
+    assert.deepStrictEqual(posts.map((p) => p[2].conversation_config.tts.voice_id), ['v_gone', 'v_au_m']);
+  });
+
+  it('does not retry sync failures unrelated to voices', async () => {
+    const { deps, calls } = fakeDeps({ scenarioRow: scenario, createStatus: 500 });
+    await syncAgent('chest-injury', deps);
+    assert.strictEqual(calls.filter((c) => c[0] === 'POST').length, 1);
+    assert.ok(!calls.some((c) => c[0] === 'setDefaultVoice'));
+  });
+
   it('ensureAgent returns the existing id without calling ElevenLabs', async () => {
     const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old', elSyncedAt: new Date().toISOString() } });
     assert.strictEqual(await ensureAgent(deps.db.scenario, deps), 'agent_old');
@@ -113,5 +145,22 @@ describe('scenarioSync', () => {
     const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old', elSyncedAt: '2020-01-01T00:00:00Z' } });
     await ensureAgent(deps.db.scenario, deps);
     assert.ok(calls.length > 0);
+  });
+
+  it('ensureAgent keeps using the existing agent when refreshing a stale one fails', async () => {
+    const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old', elSyncedAt: '2020-01-01T00:00:00Z' }, patchStatus: 401 });
+    assert.strictEqual(await ensureAgent(deps.db.scenario, deps), 'agent_old');
+    assert.ok(calls.some((c) => c[0] === 'PATCH'));
+    assert.ok(calls.some((c) => c[0] === 'setAgentSync' && /convai_write/.test(c[3] || '')), 'records the sync error for the builder');
+  });
+
+  it('ensureAgent surfaces the error when the stale agent is gone and re-creating it fails', async () => {
+    const { deps } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_gone', elSyncedAt: '2020-01-01T00:00:00Z' }, patchStatus: 404, createStatus: 400 });
+    await assert.rejects(() => ensureAgent(deps.db.scenario, deps), (e) => e.code === 'sync_failed' && /boom/.test(e.message));
+  });
+
+  it('ensureAgent still fails when there is no agent to fall back to', async () => {
+    const { deps } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: null }, createStatus: 401 });
+    await assert.rejects(() => ensureAgent(deps.db.scenario, deps), (e) => e.code === 'sync_failed');
   });
 });
