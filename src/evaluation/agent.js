@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../config');
 const { buildEvaluationPrompt } = require('./prompts');
-const { validateEvaluation, sanitizeEvaluation } = require('./schema');
+const { validateEvaluation, sanitizeEvaluation, sanitizeRubricEvaluation, SCORE_FIELDS, RUBRIC_SCORE_FIELDS } = require('./schema');
 const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
@@ -39,9 +39,11 @@ async function evaluateSession(transcript, scenarioContext) {
         throw new Error('Evaluation returned invalid JSON');
       }
 
-      evaluation = sanitizeEvaluation(evaluation);
+      const rubric = scenarioContext && scenarioContext.rubric;
+      const rubricMode = !!(rubric && Array.isArray(rubric.items) && rubric.items.length > 0);
+      evaluation = rubricMode ? sanitizeRubricEvaluation(evaluation, rubric) : sanitizeEvaluation(evaluation);
 
-      const { valid, errors } = validateEvaluation(evaluation);
+      const { valid, errors } = validateEvaluation(evaluation, rubricMode ? RUBRIC_SCORE_FIELDS : SCORE_FIELDS);
       if (!valid) {
         throw new Error(`Evaluation validation failed: ${errors.join(', ')}`);
       }

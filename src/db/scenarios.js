@@ -10,6 +10,9 @@ function rowToScenario(r) {
     maxDurationSeconds: r.max_duration_seconds,
     defaultVoiceId: r.default_voice_id,
     defaultVoiceName: r.default_voice_name,
+    callerContext: r.caller_context || null,
+    evaluatorRole: r.evaluator_role || null,
+    rubric: r.rubric || null,
     elAgentId: r.el_agent_id,
     elSyncedAt: r.el_synced_at,
     elSyncError: r.el_sync_error,
@@ -119,9 +122,10 @@ async function createScenario(dto) {
   try {
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO scenarios (id, name, description, claim_type, difficulty, max_duration_seconds, default_voice_id, default_voice_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [dto.id, dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null]
+      `INSERT INTO scenarios (id, name, description, claim_type, difficulty, max_duration_seconds, default_voice_id, default_voice_name, caller_context, evaluator_role, rubric)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [dto.id, dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null,
+        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null]
     );
     await replacePersonas(dto.id, dto.personas || [], client);
     await client.query('COMMIT');
@@ -140,9 +144,10 @@ async function updateScenario(id, dto) {
     await client.query('BEGIN');
     const res = await client.query(
       `UPDATE scenarios SET name=$1, description=$2, claim_type=$3, difficulty=$4, max_duration_seconds=$5,
-         default_voice_id=$6, default_voice_name=$7, updated_at=NOW()
-       WHERE id=$8 RETURNING id`,
-      [dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null, id]
+         default_voice_id=$6, default_voice_name=$7, caller_context=$8, evaluator_role=$9, rubric=$10, updated_at=NOW()
+       WHERE id=$11 RETURNING id`,
+      [dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null,
+        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null, id]
     );
     if (res.rows.length === 0) { await client.query('ROLLBACK'); return null; }
     await replacePersonas(id, dto.personas || [], client);

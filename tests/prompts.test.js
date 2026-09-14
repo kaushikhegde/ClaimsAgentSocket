@@ -38,6 +38,14 @@ describe('training prompts', () => {
     assert.strictEqual(scripted.claim_type, 'workplace injury');
     const free = buildDynamicVariables({ mode: 'freestyle', persona: null, claimType: 'slip_and_fall' });
     assert.strictEqual(free.opening_line, DEFAULT_OPENING_LINE);
-    assert.deepStrictEqual(Object.keys(free).sort(), ['character_instructions', 'claim_type', 'opening_line']);
+    assert.deepStrictEqual(Object.keys(free).sort(), ['caller_context', 'character_instructions', 'claim_type', 'opening_line']);
+  });
+
+  it('caller context defaults to the insurer framing and uses the scenario text when set', () => {
+    const legacy = buildDynamicVariables({ mode: 'scripted', persona, claimType: 'workplace_injury' });
+    assert.ok(legacy.caller_context.includes('calling an insurer to file a workplace injury claim'));
+    assert.ok(legacy.caller_context.includes('Incident Details'));
+    const custom = buildDynamicVariables({ mode: 'scripted', persona, claimType: 'crisis_support', callerContext: '  You are calling Services Australia.  ' });
+    assert.strictEqual(custom.caller_context, 'You are calling Services Australia.');
   });
 });

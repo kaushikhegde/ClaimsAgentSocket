@@ -87,7 +87,7 @@ async function startCall({ scenarioId, mode, agentName }, deps) {
       },
       persona: persona ? { id: persona.id, name: persona.name, gender: persona.gender, emotionalState: persona.emotionalState } : null,
       voiceId: (persona && persona.voiceId) || scenario.defaultVoiceId || null,
-      dynamicVariables: buildDynamicVariables({ mode: sessionMode, persona, claimType: scenario.claimType }),
+      dynamicVariables: buildDynamicVariables({ mode: sessionMode, persona, claimType: scenario.claimType, callerContext: scenario.callerContext }),
     };
   } catch (err) {
     throw mapElevenLabsError(err);
@@ -127,6 +127,9 @@ async function completeCall({ conversationId }, deps) {
       personaName: persona ? persona.name : 'Unknown',
       emotionalState: persona ? persona.emotionalState : '',
       mode: pending.mode,
+      callerContext: scenario ? scenario.callerContext : null,
+      evaluatorRole: scenario ? scenario.evaluatorRole : null,
+      rubric: scenario ? scenario.rubric : null,
     };
     const evaluation = await d.evaluate(transcript, scenarioContext);
 
@@ -158,6 +161,8 @@ async function completeCall({ conversationId }, deps) {
         audioFilePath,
         personaId: pending.personaId,
         elConversationId: conversationId,
+        rubricBreakdown: evaluation.rubricBreakdown || null,
+        rubricSnapshot: evaluation.rubricBreakdown ? scenarioContext.rubric : null,
       }, client);
       sessionId = saved.id;
       await d.insertTranscript(sessionId, transcript, duration, client);
@@ -179,6 +184,8 @@ async function completeCall({ conversationId }, deps) {
         scores: evaluation.scores,
         rtwasaBreakdown: evaluation.rtwasaBreakdown,
         sopBreakdown: evaluation.sopBreakdown,
+        rubricBreakdown: evaluation.rubricBreakdown || null,
+        rubric: evaluation.rubricBreakdown ? scenarioContext.rubric : null,
         sentiment: evaluation.sentiment,
         coaching: evaluation.coaching,
         scenario: { id: pending.scenarioId, name: scenario ? scenario.name : pending.scenarioId },

@@ -66,9 +66,11 @@ async function syncAgent(scenarioId, deps) {
   }
 }
 
-/** Returns the agent id, syncing first only when the scenario has none. */
+/** Returns the agent id, syncing first when the scenario has none or was synced before the current prompt. */
 async function ensureAgent(scenario, deps) {
-  if (scenario.elAgentId) return scenario.elAgentId;
+  const { PROMPT_UPDATED_AT } = require('./prompts');
+  const stale = !scenario.elSyncedAt || new Date(scenario.elSyncedAt) < new Date(PROMPT_UPDATED_AT);
+  if (scenario.elAgentId && !stale) return scenario.elAgentId;
   const out = await syncAgent(scenario.id, deps);
   if (!out.ok) throw Object.assign(new Error(out.error || 'Agent sync failed'), { code: 'sync_failed' });
   return out.agentId;

@@ -104,8 +104,14 @@ describe('scenarioSync', () => {
   });
 
   it('ensureAgent returns the existing id without calling ElevenLabs', async () => {
-    const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old' } });
+    const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old', elSyncedAt: new Date().toISOString() } });
     assert.strictEqual(await ensureAgent(deps.db.scenario, deps), 'agent_old');
     assert.strictEqual(calls.length, 0);
+  });
+
+  it('ensureAgent re-syncs an agent synced before the current prompt version', async () => {
+    const { deps, calls } = fakeDeps({ scenarioRow: { ...scenario, elAgentId: 'agent_old', elSyncedAt: '2020-01-01T00:00:00Z' } });
+    await ensureAgent(deps.db.scenario, deps);
+    assert.ok(calls.length > 0);
   });
 });

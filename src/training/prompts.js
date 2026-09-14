@@ -6,9 +6,15 @@
  * agent's first_message as {{opening_line}}.
  */
 
+// Bump when SYSTEM_PROMPT_TEMPLATE or its variables change: agents synced earlier are re-synced on next call.
+const PROMPT_UPDATED_AT = '2026-09-14T09:00:00Z';
+
 const DEFAULT_OPENING_LINE = 'Hi… yeah, I need to file a claim. I got hurt at work.';
 
-const SYSTEM_PROMPT_TEMPLATE = `You are role-playing as a customer calling an insurer to file a {{claim_type}} claim. You are NOT an AI assistant — you are the customer.
+const SYSTEM_PROMPT_TEMPLATE = `You are role-playing as a caller in a training simulation ({{claim_type}}). You are NOT an AI assistant — you are the caller.
+
+CALL CONTEXT:
+{{caller_context}}
 
 {{character_instructions}}
 
@@ -21,10 +27,10 @@ CRITICAL RULES:
 6. You can mention details from your backstory when relevant, but don't dump everything at once.
 7. If asked something not covered by your backstory or documents, improvise realistically and stay consistent afterwards.
 8. Keep responses conversational — short sentences, natural pauses, some emotion.
-9. Once the agent has asked at least 5 questions, or once they have collected your Name, Incident Details, and Contact Info, start acting impatient and ask to wrap up the call.
+9. If your background describes situational cues (whispering, being interrupted, going quiet, coded language), act them out at the moments described.
 
 DOCUMENTS:
-- You may have documents about your situation (medical certificates, incident reports, policy paperwork) in your knowledge base.
+- You may have documents about your situation (certificates, reports, letters, paperwork) in your knowledge base.
 - When the agent asks about something those documents cover, answer from them the way a real person would — in your own words, not read aloud, and only the part they asked for.
 - Never mention that you have a "knowledge base" or "documents loaded"; to you they are just papers you have at home.
 
@@ -37,7 +43,7 @@ VOICE & TONE MECHANICS:
 NEVER:
 - Break character
 - Reveal you are an AI
-- Ask the agent questions about how to file (you're the customer, not the agent)
+- Ask the agent questions about how their process works (you're the caller, not the agent)
 - Be overly cooperative — real customers need some coaxing
 
 ENDING THE CALL:
@@ -54,10 +60,17 @@ const CLAIM_TYPE_LABELS = {
   medical_malpractice: 'medical malpractice',
   property_damage: 'property damage',
   general_injury: 'general injury',
+  crisis_support: 'crisis support',
 };
 
 function claimTypeLabel(claimType) {
   return CLAIM_TYPE_LABELS[claimType] || String(claimType || 'insurance').replace(/_/g, ' ');
+}
+
+/** Scenario-defined framing, or the original insurance framing when none is set. */
+function buildCallerContext({ callerContext, claimType }) {
+  if (callerContext && callerContext.trim()) return callerContext.trim();
+  return `You are a customer calling an insurer to file a ${claimTypeLabel(claimType)} claim. Once the agent has asked at least 5 questions, or once they have collected your Name, Incident Details, and Contact Info, start acting impatient and ask to wrap up the call.`;
 }
 
 function buildCharacterInstructions({ mode, persona, claimType }) {
@@ -72,9 +85,10 @@ function buildCharacterInstructions({ mode, persona, claimType }) {
 You are ${persona.name}. Stay in character at ALL times.`;
 }
 
-function buildDynamicVariables({ mode, persona, claimType }) {
+function buildDynamicVariables({ mode, persona, claimType, callerContext }) {
   const scripted = mode !== 'freestyle' && persona;
   return {
+    caller_context: buildCallerContext({ callerContext, claimType }),
     character_instructions: buildCharacterInstructions({ mode, persona, claimType }),
     opening_line: (scripted && persona.openingLine) ? persona.openingLine : DEFAULT_OPENING_LINE,
     claim_type: claimTypeLabel(claimType),
@@ -83,6 +97,7 @@ function buildDynamicVariables({ mode, persona, claimType }) {
 
 /** Defaults registered on the agent so a call never fails on a missing variable. */
 const DYNAMIC_VARIABLE_DEFAULTS = {
+  caller_context: buildCallerContext({ callerContext: null, claimType: 'workplace_injury' }),
   character_instructions: buildCharacterInstructions({ mode: 'freestyle', persona: null, claimType: 'workplace_injury' }),
   opening_line: DEFAULT_OPENING_LINE,
   claim_type: 'workplace injury',
@@ -90,8 +105,10 @@ const DYNAMIC_VARIABLE_DEFAULTS = {
 
 module.exports = {
   SYSTEM_PROMPT_TEMPLATE,
+  PROMPT_UPDATED_AT,
   DYNAMIC_VARIABLE_DEFAULTS,
   DEFAULT_OPENING_LINE,
+  buildCallerContext,
   buildCharacterInstructions,
   buildDynamicVariables,
   claimTypeLabel,

@@ -1,4 +1,84 @@
 function buildEvaluationPrompt(transcript, scenarioContext) {
+  const rubric = scenarioContext && scenarioContext.rubric;
+  if (rubric && Array.isArray(rubric.items) && rubric.items.length > 0) {
+    return buildRubricEvaluationPrompt(transcript, scenarioContext);
+  }
+  return buildLegacyEvaluationPrompt(transcript, scenarioContext);
+}
+
+/** Scenario-defined checklist. Scores are recomputed server-side from the statuses (see schema.js). */
+function buildRubricEvaluationPrompt(transcript, ctx) {
+  const role = (ctx.evaluatorRole && ctx.evaluatorRole.trim()) || 'expert contact-centre training evaluator';
+  const items = ctx.rubric.items;
+  const itemLines = items
+    .map((it) => `   - ${it.key}${it.critical ? ' [CRITICAL]' : ''} — ${it.label}: ${it.description}`)
+    .join('\n');
+  const breakdownJson = items
+    .map((it) => `    "${it.key}": {"status": "<pass|partial|fail|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"}`)
+    .join(',\n');
+
+  return `You are an ${role}. Analyze this training call transcript where a frontline officer (the trainee, "agent") handled a simulated caller.
+
+SCENARIO CONTEXT:
+- Scenario: ${ctx.scenarioName || ctx.name}
+- Call context: ${ctx.callerContext || 'n/a'}
+- Caller Persona: ${ctx.personaName}
+- Emotional State: ${ctx.emotionalState}
+
+TRANSCRIPT:
+${transcript}
+
+EVALUATE the agent. Score each general dimension 0-100:
+
+1. EMPATHY: Acknowledged emotions, warmth, validation, active listening, trauma-aware responses.
+2. QUESTION QUALITY: One question at a time, open-ended when appropriate, logical flow, explained why sensitive questions were needed.
+3. TONE CONSISTENCY: Calm, professional and warm throughout; no abrupt or bureaucratic shifts.
+4. TALK/LISTEN RATIO: Target roughly 40% agent / 60% caller. Estimate from turn lengths.
+5. FILLER WORDS: 100 for no filler words ("um", "uh", "like", "you know", "basically"), decreasing proportionally.
+6. RESPONSE TIME: Perceived responsiveness; no awkward gaps or rushing.
+
+SCENARIO CHECKLIST — "${ctx.rubric.title || 'Scenario Checklist'}". For EACH item assign a status:
+   - "pass": clearly demonstrated
+   - "partial": partially or weakly demonstrated
+   - "fail": the situation called for it and the agent did not do it (or did the opposite)
+   - "na": the situation genuinely never arose in this call — do NOT use "na" just because the agent missed it
+${itemLines}
+For each item give a short evidence quote from the transcript and a timestamp reference (empty strings if na). Items marked [CRITICAL] are safety-critical: be strict.
+
+SENTIMENT ANALYSIS: 6-10 data points evenly spaced through the conversation:
+- agentTone: -1.0 (cold/negative) to 1.0 (warm/positive)
+- customerMood: -1.0 (distressed/upset) to 1.0 (calm/reassured)
+
+COACHING: Specific, actionable feedback referencing the checklist where relevant:
+- strengths: 2-4 things done well, with timestamp references
+- improvements: 2-4 areas to improve (prioritise any failed CRITICAL items), with timestamp references
+- alternatives: for the 1-2 weakest moments, a better response the agent could have given
+
+Return ONLY valid JSON in this exact format:
+{
+  "scores": {
+    "empathy": <number>,
+    "questionQuality": <number>,
+    "toneConsistency": <number>,
+    "talkListenRatio": <number>,
+    "fillerWords": <number>,
+    "responseTime": <number>
+  },
+  "rubricBreakdown": {
+${breakdownJson}
+  },
+  "sentiment": [
+    {"timestamp": <seconds>, "agentTone": <-1 to 1>, "customerMood": <-1 to 1>}
+  ],
+  "coaching": {
+    "strengths": [{"text": "<description>", "reference": "<timestamp>"}],
+    "improvements": [{"text": "<description>", "reference": "<timestamp>"}],
+    "alternatives": [{"original": "<what agent said>", "suggested": "<better response>", "reference": "<timestamp>"}]
+  }
+}`;
+}
+
+function buildLegacyEvaluationPrompt(transcript, scenarioContext) {
   return `You are an expert insurance training evaluator. Analyze this training call transcript where an insurance agent (the trainee) handled a simulated customer call.
 
 SCENARIO CONTEXT:
@@ -115,4 +195,4 @@ Return ONLY valid JSON in this exact format:
 }`;
 }
 
-module.exports = { buildEvaluationPrompt };
+module.exports = { buildEvaluationPrompt, buildRubricEvaluationPrompt, buildLegacyEvaluationPrompt };
