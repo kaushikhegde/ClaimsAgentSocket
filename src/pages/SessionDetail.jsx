@@ -42,6 +42,7 @@ const SOP_LABELS = {
 const SOP_STATUS_STYLES = {
   pass:    { box: 'bg-green-400/[0.06] border-green-400/[0.15]', text: 'text-green-400' },
   partial: { box: 'bg-amber-400/[0.06] border-amber-400/[0.15]', text: 'text-amber-500' },
+  fail:    { box: 'bg-red-400/[0.06] border-red-400/[0.2]', text: 'text-red-500' },
   na:      { box: 'bg-gray-50 border-gray-100', text: 'text-gray-500' },
 };
 
@@ -58,6 +59,7 @@ const COMPETENCY_GRADIENTS = {
   responseTime: 'from-cyan-500 to-cyan-400',
   rtwasaCompliance: 'from-sky-500 to-sky-400',
   sopCompliance: 'from-fuchsia-500 to-fuchsia-400',
+  rubricCompliance: 'from-fuchsia-500 to-fuchsia-400',
 };
 
 // Competency labels are imported from ../scoreLabels (SCORE_LABELS, aliased above).
@@ -136,8 +138,20 @@ export default function SessionDetail() {
     );
   }
 
+  // Sessions scored against a scenario checklist carry their own rubric snapshot.
+  const rubricBreakdown = session.rubric_breakdown || null;
+  const rubricItems = session.rubric_snapshot?.items || [];
+  const isRubricSession = !!rubricBreakdown && rubricItems.length > 0;
+
   // Build score cards from real data
-  const scoreCards = [
+  const scoreCards = isRubricSession ? [
+    { label: 'Overall', value: session.overall_score || 0, color: '#4ade80' },
+    { label: 'Checklist', value: session.scores?.rubricCompliance || 0, color: '#e879f9' },
+    { label: 'Empathy', value: session.scores?.empathy || 0, color: '#c084fc' },
+    { label: 'Questions', value: session.scores?.questionQuality || 0, color: '#818cf8' },
+    { label: 'Tone', value: session.scores?.toneConsistency || 0, color: '#2dd4bf' },
+    { label: 'Talk / Listen', value: session.scores?.talkListenRatio || 0, color: '#fb7185' },
+  ] : [
     { label: 'Overall', value: session.overall_score || 0, color: '#4ade80' },
     { label: 'Empathy', value: session.scores?.empathy || 0, color: '#c084fc' },
     { label: 'Compliance', value: session.scores?.compliance || 0, color: '#fbbf24' },
@@ -472,6 +486,50 @@ export default function SessionDetail() {
           </div>
         </GlassCard>
       </div>
+
+      {/* ── Scenario Checklist Breakdown ───────────────────── */}
+      {isRubricSession && (
+        <GlassCard hover={false} className="p-5">
+          <h2 className="text-[13px] font-semibold text-gray-900 uppercase tracking-wider mb-4">
+            {session.rubric_snapshot.title || 'Scenario Checklist'}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {rubricItems.map((it) => {
+              const item = rubricBreakdown[it.key] || { status: 'na', evidence: '', reference: '' };
+              const style = SOP_STATUS_STYLES[item.status] || SOP_STATUS_STYLES.na;
+              return (
+                <div key={it.key} className={`rounded-xl p-3 border ${style.box}`}>
+                  <div className="flex items-start gap-2">
+                    {item.status === 'pass' ? (
+                      <CheckCircle size={16} className="text-green-400 shrink-0 mt-0.5" />
+                    ) : item.status === 'partial' ? (
+                      <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                    ) : item.status === 'fail' ? (
+                      <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle size={16} className="text-gray-500 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className={`text-[13px] font-medium ${style.text}`}>
+                        {it.label}
+                        {it.critical && <span className="ml-1.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-500">Critical</span>}
+                        {item.status !== 'pass' && <span className="ml-1 text-[11px] uppercase">· {item.status === 'na' ? 'n/a' : item.status}</span>}
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">{it.description}</p>
+                      {item.evidence && (
+                        <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
+                          “{item.evidence}”
+                          {item.reference && <span className="text-gray-400"> ({item.reference})</span>}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
 
       {/* ── RTWASA Compliance Breakdown ─────────────────────── */}
       {Object.keys(rtwasaBreakdown).length > 0 && (

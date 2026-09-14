@@ -11,6 +11,7 @@ export const SCORE_LABELS = {
   responseTime: 'Response Time',
   rtwasaCompliance: 'RTWASA Compliance',
   sopCompliance: 'SOP Compliance',
+  rubricCompliance: 'Checklist Compliance',
 };
 
 // Friendly label for a score key, falling back to spaced-out title case.

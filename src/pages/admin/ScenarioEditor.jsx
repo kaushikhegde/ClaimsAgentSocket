@@ -10,12 +10,15 @@ import { apiFetch } from '../../api';
 const CLAIM_TYPES = [
   ['workplace_injury', 'Workplace injury'], ['auto_accident', 'Auto accident'], ['slip_and_fall', 'Slip and fall'],
   ['medical_malpractice', 'Medical malpractice'], ['property_damage', 'Property damage'], ['general_injury', 'General injury'],
+  ['crisis_support', 'Crisis support'],
 ];
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
 const DEFAULT_OPENING = 'Hi… yeah, I need to file a claim. I got hurt at work.';
 
 const emptyPersona = () => ({ key: Math.random().toString(36).slice(2), name: '', gender: 'male', emotionalState: '', backstory: '', openingLine: DEFAULT_OPENING, voiceId: null, voiceName: null });
-const emptyScenario = () => ({ id: '', name: '', description: '', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, defaultVoiceId: null, defaultVoiceName: null, personas: [emptyPersona()] });
+const emptyScenario = () => ({ id: '', name: '', description: '', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, defaultVoiceId: null, defaultVoiceName: null, callerContext: '', evaluatorRole: '', rubric: null, personas: [emptyPersona()] });
+const emptyRubricItem = () => ({ uid: Math.random().toString(36).slice(2), key: '', label: '', description: '', critical: false });
+const withUids = (rubric) => (rubric ? { ...rubric, items: rubric.items.map((it) => ({ uid: it.key || Math.random().toString(36).slice(2), ...it })) } : null);
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50);
 
@@ -60,6 +63,7 @@ export default function ScenarioEditor() {
     setForm({
       id: s.id, name: s.name, description: s.description || '', claimType: s.claimType, difficulty: s.difficulty,
       maxDurationSeconds: s.maxDurationSeconds, defaultVoiceId: s.defaultVoiceId, defaultVoiceName: s.defaultVoiceName,
+      callerContext: s.callerContext || '', evaluatorRole: s.evaluatorRole || '', rubric: withUids(s.rubric),
       personas: s.personas.map((p) => ({ key: p.id, ...p })),
     });
     setDocuments(s.documents || []);
@@ -82,6 +86,7 @@ export default function ScenarioEditor() {
   }, [indexing, id, isNew]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const setRubricItem = (uid, patch) => setForm((f) => ({ ...f, rubric: { ...f.rubric, items: f.rubric.items.map((it) => (it.uid === uid ? { ...it, ...patch } : it)) } }));
   const setPersona = (key, patch) => setForm((f) => ({ ...f, personas: f.personas.map((p) => (p.key === key ? { ...p, ...patch } : p)) }));
   const movePersona = (idx, dir) => setForm((f) => {
     const arr = [...f.personas]; const j = idx + dir;
@@ -96,6 +101,9 @@ export default function ScenarioEditor() {
       const body = {
         ...form,
         maxDurationSeconds: Number(form.maxDurationSeconds),
+        rubric: form.rubric
+          ? { title: form.rubric.title, items: form.rubric.items.map((it) => ({ key: it.key, label: it.label, description: it.description, critical: it.critical })) }
+          : null,
         personas: form.personas.map((p) => {
           const { key: _key, id: pid, scenarioId: _sid, sortOrder: _so, ...rest } = p;
           return pid && !isNew ? { id: pid, ...rest } : rest;
@@ -185,6 +193,40 @@ export default function ScenarioEditor() {
           </Field>
         </div>
         <VoiceField label="Default voice" value={{ voiceId: form.defaultVoiceId, voiceName: form.defaultVoiceName }} onChange={(v) => set({ defaultVoiceId: v.voiceId, defaultVoiceName: v.voiceName })} usage={usage} onUsageChange={refreshUsage} placeholder="Auto-pick an Australian voice" />
+      </GlassCard>
+
+      <GlassCard hover={false} className="p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-900">Caller &amp; scoring</h2>
+        <Field label="Call context" hint="Who the caller is calling and why, and how they behave. Leave blank for the default insurance claim framing.">
+          <textarea className={inputCls} rows={4} value={form.callerContext} onChange={(e) => set({ callerContext: e.target.value })} placeholder="e.g. You are calling Services Australia after leaving a violent home…" />
+        </Field>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={!!form.rubric} onChange={(e) => set({ rubric: e.target.checked ? { title: '', items: [emptyRubricItem()] } : null })} />
+          Use a custom scoring checklist <span className="text-xs text-gray-400">(off = insurance RTWASA + SOP scoring)</span>
+        </label>
+        {form.rubric && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="Checklist title"><input className={inputCls} value={form.rubric.title || ''} onChange={(e) => set({ rubric: { ...form.rubric, title: e.target.value } })} placeholder="e.g. FDV Crisis Triage Protocol" /></Field>
+              <Field label="Evaluator role"><input className={inputCls} value={form.evaluatorRole} onChange={(e) => set({ evaluatorRole: e.target.value })} placeholder="expert contact-centre training evaluator" /></Field>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Checklist items ({form.rubric.items.length}/15)</p>
+              <button type="button" disabled={form.rubric.items.length >= 15} onClick={() => set({ rubric: { ...form.rubric, items: [...form.rubric.items, emptyRubricItem()] } })} className="inline-flex items-center gap-1 text-xs font-medium text-[#464e7e] disabled:opacity-40"><Plus size={13} /> Add item</button>
+            </div>
+            {form.rubric.items.map((it, idx) => (
+              <div key={it.uid} className="rounded-xl border border-gray-200 p-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
+                  <input className={inputCls} value={it.label} onChange={(e) => setRubricItem(it.uid, { label: e.target.value })} placeholder="Label, e.g. Safety to speak" />
+                  <label className="flex items-center gap-1 text-xs text-gray-600 shrink-0"><input type="checkbox" checked={!!it.critical} onChange={(e) => setRubricItem(it.uid, { critical: e.target.checked })} /> Critical</label>
+                  <button type="button" disabled={form.rubric.items.length <= 1} onClick={() => set({ rubric: { ...form.rubric, items: form.rubric.items.filter((x) => x.uid !== it.uid) } })} aria-label="Remove item" className="text-gray-400 hover:text-red-500 disabled:opacity-30"><Trash2 size={14} /></button>
+                </div>
+                <textarea className={inputCls} rows={2} value={it.description} onChange={(e) => setRubricItem(it.uid, { description: e.target.value })} placeholder="What a pass looks like — the evaluator marks pass / partial / fail / n/a against this." />
+              </div>
+            ))}
+          </div>
+        )}
       </GlassCard>
 
       <GlassCard hover={false} className="p-6 space-y-4">
