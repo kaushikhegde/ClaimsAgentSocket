@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 const { buildDynamicVariables } = require('./prompts');
+const { normalizeFeatures, sanitizeHandoverNote, sanitizeSafetyActions, scoreActionSequencing } = require('./features');
 
 class CallFlowError extends Error {
   constructor(status, message, extra = {}) {
@@ -56,11 +57,13 @@ function mapElevenLabsError(err) {
 async function startCall({ scenarioId, mode, agentName }, deps) {
   const d = withDefaults(deps);
   if (!scenarioId || typeof scenarioId !== 'string') throw new CallFlowError(400, 'Missing or invalid scenarioId');
-  const sessionMode = VALID_MODES.has(mode) ? mode : 'scripted';
   const trainee = (typeof agentName === 'string' && agentName.trim()) ? agentName.trim().slice(0, 255) : 'default';
 
   let scenario = await d.db.getScenario(scenarioId);
   if (!scenario) throw new CallFlowError(404, `Unknown scenario: ${scenarioId}`);
+  const features = normalizeFeatures(scenario.features);
+  // Scripted-only scenarios depend on persona cues that a freestyle caller would not reproduce.
+  const sessionMode = features.scriptedOnly ? 'scripted' : (VALID_MODES.has(mode) ? mode : 'scripted');
 
   d.db.purgeStalePendingCalls().catch(() => {});
 
@@ -84,7 +87,9 @@ async function startCall({ scenarioId, mode, agentName }, deps) {
       scenario: {
         id: scenario.id, name: scenario.name, claimType: scenario.claimType, difficulty: scenario.difficulty,
         maxDurationSeconds: scenario.maxDurationSeconds, documentCount: scenario.documentCount,
+        features,
       },
+      mode: sessionMode,
       persona: persona ? { id: persona.id, name: persona.name, gender: persona.gender, emotionalState: persona.emotionalState } : null,
       voiceId: (persona && persona.voiceId) || scenario.defaultVoiceId || null,
       dynamicVariables: buildDynamicVariables({ mode: sessionMode, persona, claimType: scenario.claimType, callerContext: scenario.callerContext }),
@@ -94,7 +99,7 @@ async function startCall({ scenarioId, mode, agentName }, deps) {
   }
 }
 
-async function completeCall({ conversationId }, deps) {
+async function completeCall({ conversationId, handoverNote, safetyActions }, deps) {
   const d = withDefaults(deps);
   if (!conversationId || typeof conversationId !== 'string') throw new CallFlowError(400, 'Missing conversationId');
 
@@ -103,6 +108,11 @@ async function completeCall({ conversationId }, deps) {
 
   const scenario = await d.db.getScenario(pending.scenarioId, { includeInactive: true });
   const persona = scenario && pending.personaId ? (scenario.personas || []).find((p) => p.id === pending.personaId) || null : null;
+  const features = normalizeFeatures(scenario && scenario.features);
+  const hasRubric = !!(scenario && scenario.rubric);
+  const note = hasRubric && features.handoverNote ? sanitizeHandoverNote(handoverNote) : null;
+  const clicks = hasRubric ? sanitizeSafetyActions(safetyActions, features.safetyActions) : [];
+  const sequencing = hasRubric ? scoreActionSequencing(clicks, features.safetyActions) : null;
 
   let conversation;
   try {
@@ -130,6 +140,9 @@ async function completeCall({ conversationId }, deps) {
       callerContext: scenario ? scenario.callerContext : null,
       evaluatorRole: scenario ? scenario.evaluatorRole : null,
       rubric: scenario ? scenario.rubric : null,
+      handoverEnabled: hasRubric && features.handoverNote,
+      handoverNote: note,
+      actionSequencing: sequencing,
     };
     const evaluation = await d.evaluate(transcript, scenarioContext);
 
@@ -163,6 +176,9 @@ async function completeCall({ conversationId }, deps) {
         elConversationId: conversationId,
         rubricBreakdown: evaluation.rubricBreakdown || null,
         rubricSnapshot: evaluation.rubricBreakdown ? scenarioContext.rubric : null,
+        handoverNote: note,
+        handoverBreakdown: evaluation.handoverBreakdown || null,
+        safetyActions: sequencing ? { clicks, ...sequencing } : null,
       }, client);
       sessionId = saved.id;
       await d.insertTranscript(sessionId, transcript, duration, client);
@@ -186,6 +202,8 @@ async function completeCall({ conversationId }, deps) {
         sopBreakdown: evaluation.sopBreakdown,
         rubricBreakdown: evaluation.rubricBreakdown || null,
         rubric: evaluation.rubricBreakdown ? scenarioContext.rubric : null,
+        handoverBreakdown: evaluation.handoverBreakdown || null,
+        safetyActions: sequencing,
         sentiment: evaluation.sentiment,
         coaching: evaluation.coaching,
         scenario: { id: pending.scenarioId, name: scenario ? scenario.name : pending.scenarioId },

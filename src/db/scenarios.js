@@ -1,4 +1,5 @@
 const pool = require('./pool');
+const { normalizeFeatures } = require('../training/features');
 
 function rowToScenario(r) {
   return {
@@ -13,6 +14,7 @@ function rowToScenario(r) {
     callerContext: r.caller_context || null,
     evaluatorRole: r.evaluator_role || null,
     rubric: r.rubric || null,
+    features: normalizeFeatures(r.features),
     elAgentId: r.el_agent_id,
     elSyncedAt: r.el_synced_at,
     elSyncError: r.el_sync_error,
@@ -122,10 +124,10 @@ async function createScenario(dto) {
   try {
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO scenarios (id, name, description, claim_type, difficulty, max_duration_seconds, default_voice_id, default_voice_name, caller_context, evaluator_role, rubric)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      `INSERT INTO scenarios (id, name, description, claim_type, difficulty, max_duration_seconds, default_voice_id, default_voice_name, caller_context, evaluator_role, rubric, features)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [dto.id, dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null,
-        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null]
+        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null, JSON.stringify(normalizeFeatures(dto.features))]
     );
     await replacePersonas(dto.id, dto.personas || [], client);
     await client.query('COMMIT');
@@ -144,10 +146,10 @@ async function updateScenario(id, dto) {
     await client.query('BEGIN');
     const res = await client.query(
       `UPDATE scenarios SET name=$1, description=$2, claim_type=$3, difficulty=$4, max_duration_seconds=$5,
-         default_voice_id=$6, default_voice_name=$7, caller_context=$8, evaluator_role=$9, rubric=$10, updated_at=NOW()
-       WHERE id=$11 RETURNING id`,
+         default_voice_id=$6, default_voice_name=$7, caller_context=$8, evaluator_role=$9, rubric=$10, features=$11, updated_at=NOW()
+       WHERE id=$12 RETURNING id`,
       [dto.name, dto.description || '', dto.claimType, dto.difficulty, dto.maxDurationSeconds, dto.defaultVoiceId || null, dto.defaultVoiceName || null,
-        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null, id]
+        dto.callerContext || null, dto.evaluatorRole || null, dto.rubric ? JSON.stringify(dto.rubric) : null, JSON.stringify(normalizeFeatures(dto.features)), id]
     );
     if (res.rows.length === 0) { await client.query('ROLLBACK'); return null; }
     await replacePersonas(id, dto.personas || [], client);
@@ -234,6 +236,7 @@ function toPublicScenario(s) {
     difficulty: s.difficulty,
     maxDurationSeconds: s.maxDurationSeconds,
     documentCount: s.documentCount,
+    features: s.features || normalizeFeatures(null),
     personas: (s.personas || []).map((p) => ({ id: p.id, name: p.name, gender: p.gender, emotionalState: p.emotionalState, voiceName: p.voiceName })),
   };
 }

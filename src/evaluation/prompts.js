@@ -16,6 +16,17 @@ function buildRubricEvaluationPrompt(transcript, ctx) {
   const breakdownJson = items
     .map((it) => `    "${it.key}": {"status": "<pass|partial|fail|na>", "evidence": "<quote or empty>", "reference": "<timestamp or empty>"}`)
     .join(',\n');
+  const handoverBlock = buildHandoverBlock(ctx);
+  const actionsBlock = buildActionsBlock(ctx);
+  const handoverJson = ctx.handoverEnabled && ctx.handoverNote
+    ? `,
+  "handover": {
+    "completeness": <number>,
+    "captured": ["<fact from the call correctly recorded in the note>"],
+    "missing": ["<fact disclosed in the call but absent from the note>"],
+    "incorrect": ["<fact recorded wrongly, with what the caller actually said>"]
+  }`
+    : '';
 
   return `You are an ${role}. Analyze this training call transcript where a frontline officer (the trainee, "agent") handled a simulated caller.
 
@@ -44,7 +55,7 @@ SCENARIO CHECKLIST — "${ctx.rubric.title || 'Scenario Checklist'}". For EACH i
    - "na": the situation genuinely never arose in this call — do NOT use "na" just because the agent missed it
 ${itemLines}
 For each item give a short evidence quote from the transcript and a timestamp reference (empty strings if na). Items marked [CRITICAL] are safety-critical: be strict.
-
+${handoverBlock}${actionsBlock}
 SENTIMENT ANALYSIS: 6-10 data points evenly spaced through the conversation:
 - agentTone: -1.0 (cold/negative) to 1.0 (warm/positive)
 - customerMood: -1.0 (distressed/upset) to 1.0 (calm/reassured)
@@ -66,7 +77,7 @@ Return ONLY valid JSON in this exact format:
   },
   "rubricBreakdown": {
 ${breakdownJson}
-  },
+  }${handoverJson},
   "sentiment": [
     {"timestamp": <seconds>, "agentTone": <-1 to 1>, "customerMood": <-1 to 1>}
   ],
@@ -76,6 +87,46 @@ ${breakdownJson}
     "alternatives": [{"original": "<what agent said>", "suggested": "<better response>", "reference": "<timestamp>"}]
   }
 }`;
+}
+
+const HANDOVER_LABELS = {
+  safetyStatus: 'Safety status & risk',
+  safeContact: 'Safe contact method / time',
+  eventDate: 'Qualifying event date',
+  dependants: 'Children / dependants',
+  immediateNeeds: 'Immediate needs',
+  protections: 'Record protections actioned / outstanding',
+  referralConsent: 'Referral consent',
+  summary: 'Summary for the social worker',
+};
+
+function buildHandoverBlock(ctx) {
+  if (!ctx.handoverEnabled || !ctx.handoverNote) return '';
+  const lines = Object.entries(HANDOVER_LABELS)
+    .map(([key, label]) => `- ${label}: ${ctx.handoverNote[key] || '(blank)'}`)
+    .join('\n');
+  return `
+HANDOVER NOTE (written by the agent after the call for the receiving social worker):
+${lines}
+
+Assess the handover note against the transcript. List every relevant fact the CALLER DISCLOSED that a social worker would need so the caller does not have to repeat their story (safety situation, safe contact arrangements, event date, children, immediate needs, record risks, consent). Then:
+- "captured": facts correctly recorded in the note
+- "missing": facts disclosed in the call but absent from the note
+- "incorrect": facts recorded wrongly
+- "completeness": round(captured / (captured + missing + incorrect) * 100); 0 if nothing relevant was disclosed.
+Do NOT penalise the note for facts the caller never disclosed.
+`;
+}
+
+function buildActionsBlock(ctx) {
+  const seq = ctx.actionSequencing;
+  if (!seq || !Array.isArray(seq.items)) return '';
+  const fmt = (s) => (s === null || s === undefined ? 'not done' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+  const lines = seq.items.map((a) => `- ${a.label} (${a.kind === 'claim' ? 'opens the claim' : 'protective'}): ${fmt(a.at)}${a.kind === 'protect' ? ` → ${a.status}` : ''}`).join('\n');
+  return `
+SYSTEM ACTIONS TIMELINE (clicked by the agent during the call; sequencing is already scored separately — use this only to inform coaching, e.g. protections done after opening the claim or never done):
+${lines}
+`;
 }
 
 function buildLegacyEvaluationPrompt(transcript, scenarioContext) {

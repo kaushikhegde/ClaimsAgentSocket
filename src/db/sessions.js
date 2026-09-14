@@ -3,8 +3,8 @@ const pool = require('./pool');
 async function insertSession(sessionData, client) {
   const db = client || pool;
   const result = await db.query(
-    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sop_breakdown, sentiment, coaching, duration_seconds, audio_file_path, persona_id, el_conversation_id, rubric_breakdown, rubric_snapshot)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    `INSERT INTO training_sessions (scenario_id, scenario_mode, agent_name, overall_score, scores, rtwasa_breakdown, sop_breakdown, sentiment, coaching, duration_seconds, audio_file_path, persona_id, el_conversation_id, rubric_breakdown, rubric_snapshot, handover_note, handover_breakdown, safety_actions)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING id, created_at`,
     [
       sessionData.scenarioId,
@@ -22,6 +22,9 @@ async function insertSession(sessionData, client) {
       sessionData.elConversationId || null,
       sessionData.rubricBreakdown ? JSON.stringify(sessionData.rubricBreakdown) : null,
       sessionData.rubricSnapshot ? JSON.stringify(sessionData.rubricSnapshot) : null,
+      sessionData.handoverNote ? JSON.stringify(sessionData.handoverNote) : null,
+      sessionData.handoverBreakdown ? JSON.stringify(sessionData.handoverBreakdown) : null,
+      sessionData.safetyActions ? JSON.stringify(sessionData.safetyActions) : null,
     ]
   );
   return result.rows[0];

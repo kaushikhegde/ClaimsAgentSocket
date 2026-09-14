@@ -56,7 +56,11 @@ describe('startCall', () => {
     assert.strictEqual(out.persona.backstory, undefined); // the persona card is answer-key free; the backstory only travels inside dynamicVariables
     assert.strictEqual(out.dynamicVariables.opening_line, 'Hi, I hurt my chest.');
     assert.ok(out.dynamicVariables.character_instructions.includes('Marcus Johnson'));
-    assert.deepStrictEqual(out.scenario, { id: 'chest-injury', name: 'Chest Injury Claim', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, documentCount: 1 });
+    assert.deepStrictEqual(out.scenario, {
+      id: 'chest-injury', name: 'Chest Injury Claim', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, documentCount: 1,
+      features: { handoverNote: false, safetyActions: [], contentWarning: null, scriptedOnly: false },
+    });
+    assert.strictEqual(out.mode, 'scripted');
     const pending = calls.find((c) => c[0] === 'pending')[1];
     assert.deepStrictEqual(pending, { conversationId: 'conv_1', scenarioId: 'chest-injury', personaId: 'p1', mode: 'scripted', agentName: 'Sam' });
   });
@@ -103,6 +107,45 @@ describe('completeCall', () => {
     assert.strictEqual(ins.elConversationId, 'conv_1');
     assert.strictEqual(ins.durationSeconds, 42);
     assert.ok(calls.some((c) => c[0] === 'sql' && c[1] === 'COMMIT'));
+  });
+
+  it('ignores handover and safety actions for scenarios without a rubric', async () => {
+    const { deps, calls } = fakeDeps({ conversation, evaluation });
+    await startCall({ scenarioId: 'chest-injury', mode: 'scripted' }, deps);
+    await completeCall({ conversationId: 'conv_1', handoverNote: { summary: 'x' }, safetyActions: [{ key: 'a', at: 1 }] }, deps);
+    const ctx = calls.find((c) => c[0] === 'evaluate')[2];
+    assert.strictEqual(ctx.handoverEnabled, false);
+    assert.strictEqual(ctx.handoverNote, null);
+    assert.strictEqual(ctx.actionSequencing, null);
+    const ins = calls.find((c) => c[0] === 'insertSession')[1];
+    assert.strictEqual(ins.handoverNote, null);
+    assert.strictEqual(ins.safetyActions, null);
+  });
+
+  it('passes the handover note and scored action timeline for rubric scenarios', async () => {
+    const { deps, calls } = fakeDeps({ conversation, evaluation });
+    const rubricScenario = {
+      ...scenario, id: 'fdv', rubric: { title: 'T', items: [{ key: 'safety', label: 'Safety', description: 'd', critical: true }] },
+      features: {
+        handoverNote: true, scriptedOnly: true, contentWarning: 'warn',
+        safetyActions: [{ key: 'suppress', label: 'Suppress', kind: 'protect' }, { key: 'claim', label: 'Claim', kind: 'claim' }],
+      },
+    };
+    deps.db.getScenario = async (id) => (id === 'fdv' ? rubricScenario : null);
+    const started = await startCall({ scenarioId: 'fdv', mode: 'freestyle' }, deps);
+    assert.strictEqual(started.mode, 'scripted'); // scriptedOnly overrides freestyle
+    await completeCall({
+      conversationId: 'conv_1',
+      handoverNote: { eventDate: 'Tuesday', bogus: 'dropped' },
+      safetyActions: [{ key: 'claim', at: 30 }, { key: 'suppress', at: 60 }, { key: 'unknown', at: 5 }],
+    }, deps);
+    const ctx = calls.find((c) => c[0] === 'evaluate')[2];
+    assert.strictEqual(ctx.handoverEnabled, true);
+    assert.strictEqual(ctx.handoverNote.eventDate, 'Tuesday');
+    assert.strictEqual(ctx.handoverNote.bogus, undefined);
+    assert.strictEqual(ctx.actionSequencing.score, 50); // protection done after the claim → partial
+    const ins = calls.find((c) => c[0] === 'insertSession')[1];
+    assert.deepStrictEqual(ins.safetyActions.clicks, [{ key: 'claim', at: 30 }, { key: 'suppress', at: 60 }]);
   });
 
   it('rejects unknown conversation ids', async () => {

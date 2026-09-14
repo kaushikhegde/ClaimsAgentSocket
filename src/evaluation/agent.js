@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../config');
 const { buildEvaluationPrompt } = require('./prompts');
-const { validateEvaluation, sanitizeEvaluation, sanitizeRubricEvaluation, SCORE_FIELDS, RUBRIC_SCORE_FIELDS } = require('./schema');
+const { validateEvaluation, sanitizeEvaluation, sanitizeRubricEvaluation, rubricScoreFields, SCORE_FIELDS } = require('./schema');
 const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
@@ -41,9 +41,16 @@ async function evaluateSession(transcript, scenarioContext) {
 
       const rubric = scenarioContext && scenarioContext.rubric;
       const rubricMode = !!(rubric && Array.isArray(rubric.items) && rubric.items.length > 0);
-      evaluation = rubricMode ? sanitizeRubricEvaluation(evaluation, rubric) : sanitizeEvaluation(evaluation);
+      const extras = {
+        handover: { enabled: !!scenarioContext.handoverEnabled, submitted: !!scenarioContext.handoverNote },
+        actionSequencing: scenarioContext.actionSequencing ? scenarioContext.actionSequencing.score : null,
+      };
+      evaluation = rubricMode ? sanitizeRubricEvaluation(evaluation, rubric, extras) : sanitizeEvaluation(evaluation);
 
-      const { valid, errors } = validateEvaluation(evaluation, rubricMode ? RUBRIC_SCORE_FIELDS : SCORE_FIELDS);
+      const fields = rubricMode
+        ? rubricScoreFields({ handover: extras.handover.enabled, sequencing: typeof extras.actionSequencing === 'number' })
+        : SCORE_FIELDS;
+      const { valid, errors } = validateEvaluation(evaluation, fields);
       if (!valid) {
         throw new Error(`Evaluation validation failed: ${errors.join(', ')}`);
       }

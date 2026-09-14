@@ -1,3 +1,5 @@
+const { validateFeatures } = require('./features');
+
 const CLAIM_TYPES = ['auto_accident', 'workplace_injury', 'slip_and_fall', 'medical_malpractice', 'property_damage', 'general_injury', 'crisis_support'];
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
 const GENDERS = ['male', 'female'];
@@ -86,6 +88,9 @@ function validateScenarioInput(body, { isCreate }) {
   const rubric = validateRubric(body.rubric);
   if (!rubric.ok) return rubric;
   value.rubric = rubric.value;
+  const features = validateFeatures(body.features, { hasRubric: !!value.rubric });
+  if (!features.ok) return features;
+  value.features = features.value;
 
   const personas = Array.isArray(body.personas) ? body.personas : [];
   if (personas.length < 1 || personas.length > 10) return fail('personas', 'A scenario needs between 1 and 10 personas');

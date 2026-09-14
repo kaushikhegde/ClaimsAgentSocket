@@ -92,10 +92,35 @@ const RUBRIC_SCORE_FIELDS = [
   'fillerWords', 'responseTime', 'rubricCompliance',
 ];
 
+// Relative weights; the overall score is normalised over the fields present.
 const RUBRIC_WEIGHTS = {
   rubricCompliance: 40, empathy: 20, questionQuality: 15, toneConsistency: 10,
   talkListenRatio: 5, fillerWords: 5, responseTime: 5,
+  handoverCompleteness: 15, actionSequencing: 15,
 };
+
+/** Score fields for a rubric session, including the optional feature scores. */
+function rubricScoreFields({ handover = false, sequencing = false } = {}) {
+  return [
+    ...RUBRIC_SCORE_FIELDS,
+    ...(handover ? ['handoverCompleteness'] : []),
+    ...(sequencing ? ['actionSequencing'] : []),
+  ];
+}
+
+function sanitizeHandover(raw, { submitted }) {
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : []);
+  if (!submitted) {
+    return { completeness: 0, captured: [], missing: ['No handover note was submitted'], incorrect: [] };
+  }
+  const r = raw || {};
+  return {
+    completeness: Math.max(0, Math.min(100, Math.round(Number(r.completeness) || 0))),
+    captured: list(r.captured),
+    missing: list(r.missing),
+    incorrect: list(r.incorrect),
+  };
+}
 
 const VALID_RUBRIC_STATUS = ['pass', 'partial', 'fail', 'na'];
 
@@ -108,7 +133,11 @@ function computeRubricCompliance(breakdown) {
   return Math.round((points / applicable.length) * 100);
 }
 
-function sanitizeRubricEvaluation(evaluation, rubric) {
+/**
+ * extras.handover: { enabled, submitted } — score handover completeness from the model output.
+ * extras.actionSequencing: number|null — deterministic score computed from the safety-actions timeline.
+ */
+function sanitizeRubricEvaluation(evaluation, rubric, extras = {}) {
   const clamp = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
   const raw = (evaluation && evaluation.rubricBreakdown) || {};
 
@@ -126,14 +155,22 @@ function sanitizeRubricEvaluation(evaluation, rubric) {
   );
   scores.rubricCompliance = computeRubricCompliance(rubricBreakdown);
 
-  const overallScore = Math.round(
-    RUBRIC_SCORE_FIELDS.reduce((sum, f) => sum + scores[f] * RUBRIC_WEIGHTS[f], 0) / 100
-  );
+  const handoverEnabled = !!(extras.handover && extras.handover.enabled);
+  const handoverBreakdown = handoverEnabled
+    ? sanitizeHandover(evaluation && evaluation.handover, { submitted: !!extras.handover.submitted })
+    : null;
+  if (handoverBreakdown) scores.handoverCompleteness = handoverBreakdown.completeness;
+  if (typeof extras.actionSequencing === 'number') scores.actionSequencing = clamp(extras.actionSequencing);
+
+  const fields = Object.keys(scores);
+  const totalWeight = fields.reduce((n, f) => n + RUBRIC_WEIGHTS[f], 0);
+  const overallScore = Math.round(fields.reduce((sum, f) => sum + scores[f] * RUBRIC_WEIGHTS[f], 0) / totalWeight);
 
   return {
     overallScore,
     scores,
     rubricBreakdown,
+    handoverBreakdown,
     rtwasaBreakdown: {},
     sopBreakdown: {},
     sentiment: Array.isArray(evaluation?.sentiment) ? evaluation.sentiment : [],
@@ -147,5 +184,5 @@ function sanitizeRubricEvaluation(evaluation, rubric) {
 
 module.exports = {
   SCORE_FIELDS, SOP_BREAKDOWN_KEYS, validateEvaluation, sanitizeEvaluation,
-  RUBRIC_SCORE_FIELDS, RUBRIC_WEIGHTS, computeRubricCompliance, sanitizeRubricEvaluation,
+  RUBRIC_SCORE_FIELDS, RUBRIC_WEIGHTS, rubricScoreFields, computeRubricCompliance, sanitizeRubricEvaluation,
 };

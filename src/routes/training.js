@@ -23,8 +23,8 @@ router.post('/start', async (req, res) => {
 
 router.post('/complete', async (req, res) => {
   try {
-    const { conversationId } = req.body || {};
-    res.json(await completeCall({ conversationId }));
+    const { conversationId, handoverNote, safetyActions } = req.body || {};
+    res.json(await completeCall({ conversationId, handoverNote, safetyActions }));
   } catch (err) {
     sendError(res, err, 'Failed to complete training call');
   }
