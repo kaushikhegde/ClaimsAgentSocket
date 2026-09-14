@@ -93,7 +93,7 @@ export function useTrainingCall() {
   });
   conversationRef.current = conversation;
 
-  const start = useCallback(async (scenarioId, mode, agentName) => {
+  const start = useCallback(async (scenarioId, mode, agentName, personaId = null) => {
     completingRef.current = false;
     conversationIdRef.current = null;
     featuresRef.current = null;
@@ -104,7 +104,7 @@ export function useTrainingCall() {
     setErrorMessage('');
     setPhase('connecting');
     try {
-      const session = await apiFetch('/api/training/start', { method: 'POST', body: { scenarioId, mode, agentName } });
+      const session = await apiFetch('/api/training/start', { method: 'POST', body: { scenarioId, mode, agentName, ...(personaId ? { personaId } : {}) } });
       setScenario(session.scenario);
       setPersona(session.persona);
       featuresRef.current = session.scenario.features || null;

@@ -10,6 +10,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import { confirmLeave } from '../navigationGuard';
 
 const navSections = [
   {
@@ -41,6 +42,7 @@ function SidebarLink({ to, icon: Icon, label, badge, end }) {
     <NavLink
       to={to}
       end={end}
+      onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2 rounded-lg text-[13.5px] transition-all duration-200 ${
           isActive

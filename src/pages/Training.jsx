@@ -144,6 +144,9 @@ function TrainingCall() {
   const { scenarioId } = useParams();
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') || 'scripted';
+  // Opened from the scenario builder's "Test this persona": pinned persona, tagged session.
+  const pinnedPersonaId = searchParams.get('persona') || null;
+  const isTestCall = searchParams.get('test') === '1';
   const navigate = useNavigate();
   const transcriptEndRef = useRef(null);
 
@@ -177,7 +180,10 @@ function TrainingCall() {
     : phase === 'processing' ? 'Evaluating your performance...'
     : 'Waiting for call to begin...';
 
-  const handleStart = useCallback(() => start(scenarioId, mode, 'Sarah Kim'), [start, scenarioId, mode]);
+  const handleStart = useCallback(
+    () => start(scenarioId, mode, isTestCall ? 'Scenario test' : 'Sarah Kim', pinnedPersonaId),
+    [start, scenarioId, mode, isTestCall, pinnedPersonaId]
+  );
   const handleEndCall = useCallback(() => end(), [end]);
   const handleViewReview = useCallback(() => {
     navigate(`/sessions/${result?.sessionId || 'latest'}`);
@@ -189,7 +195,7 @@ function TrainingCall() {
   const progress = ((maxDuration - timeRemaining) / maxDuration) * 100;
   const activePersona = persona || DEFAULT_PERSONA;
   const PersonaAvatar = activePersona.gender === 'female' ? FemaleAvatar : MaleAvatar;
-  const modeLabel = mode === 'freestyle' && !features?.scriptedOnly ? 'Freestyle' : 'Scripted';
+  const modeLabel = mode === 'freestyle' && !features?.scriptedOnly && !pinnedPersonaId ? 'Freestyle' : 'Scripted';
   const scenarioLabel = scenario?.name || preview?.name || 'Training';
 
   return (
@@ -246,6 +252,9 @@ function TrainingCall() {
             <span className="text-xs text-gray-600">
               {scenarioLabel} · {modeLabel}
             </span>
+            {isTestCall && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700" title="Started from the scenario builder; saved to history as “Scenario test”">Test call</span>
+            )}
           </div>
         </div>
       </div>

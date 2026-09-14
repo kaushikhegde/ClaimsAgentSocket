@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, FileText, Users, Clock, ArrowRight } from 'lucide-react';
+import { Plus, FileText, Users, Clock, ArrowRight, Copy } from 'lucide-react';
 import GlassCard from '../../components/GlassCard';
 import UsageBadge from '../../components/UsageBadge';
 import { useUsage } from '../../hooks/useUsage';
@@ -51,7 +51,8 @@ export default function ScenarioList() {
               <span className="inline-flex items-center gap-1"><FileText size={12} /> {s.documentCount} doc{s.documentCount === 1 ? '' : 's'}</span>
               <span className="inline-flex items-center gap-1"><Clock size={12} /> {Math.round(s.maxDurationSeconds / 60)} min</span>
             </div>
-            <div className="mt-4 pt-3 border-t border-gray-200 flex justify-end">
+            <div className="mt-4 pt-3 border-t border-gray-200 flex justify-end gap-4">
+              <Link to={`/admin/scenarios/new?from=${s.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800"><Copy size={12} /> Duplicate</Link>
               <Link to={`/admin/scenarios/${s.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#464e7e] hover:text-[#5a6396]">Edit <ArrowRight size={12} /></Link>
             </div>
           </GlassCard>
