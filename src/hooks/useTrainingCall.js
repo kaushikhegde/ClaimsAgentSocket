@@ -6,8 +6,8 @@ const formatElapsed = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
 
 /**
  * Drives one training call end-to-end: token from our backend → WebRTC session
- * with ElevenLabs → live transcript → completion + evaluation via our backend.
- * Must be used inside <ConversationProvider>.
+ * with ElevenLabs → live transcript → (optional handover note) → completion +
+ * evaluation via our backend. Must be used inside <ConversationProvider>.
  */
 export function useTrainingCall() {
   const [phase, setPhase] = useState('idle');
@@ -17,6 +17,7 @@ export function useTrainingCall() {
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [timeRemaining, setTimeRemaining] = useState(180);
+  const [actions, setActions] = useState([]);
 
   const phaseRef = useRef('idle');
   const conversationIdRef = useRef(null);
@@ -24,18 +25,24 @@ export function useTrainingCall() {
   const completingRef = useRef(false);
   const timerRef = useRef(null);
   const conversationRef = useRef(null);
+  const featuresRef = useRef(null);
+  const actionsRef = useRef([]);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   const stopTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+  const elapsedSeconds = () => (startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0);
 
-  const complete = useCallback(async () => {
+  const complete = useCallback(async (handoverNote = null) => {
     if (completingRef.current) return;
     completingRef.current = true;
     stopTimer();
     setPhase('processing');
     try {
-      const out = await apiFetch('/api/training/complete', { method: 'POST', body: { conversationId: conversationIdRef.current } });
+      const out = await apiFetch('/api/training/complete', {
+        method: 'POST',
+        body: { conversationId: conversationIdRef.current, handoverNote, safetyActions: actionsRef.current },
+      });
       if (out.status === 'success') { setResult(out.data); setPhase('complete'); }
       else if (out.status === 'empty') { setPhase('empty'); }
       else { setErrorMessage(out.message || 'Evaluation failed'); setPhase('error'); }
@@ -45,6 +52,18 @@ export function useTrainingCall() {
     }
   }, []);
 
+  // After hang-up: collect the handover note first when the scenario asks for one.
+  const afterCall = useCallback(() => {
+    if (completingRef.current || phaseRef.current === 'handover') return;
+    stopTimer();
+    if (featuresRef.current?.handoverNote) {
+      phaseRef.current = 'handover';
+      setPhase('handover');
+    } else {
+      complete();
+    }
+  }, [complete]);
+
   const conversation = useConversation({
     onConnect: ({ conversationId }) => {
       if (conversationId) conversationIdRef.current = conversationId;
@@ -52,9 +71,8 @@ export function useTrainingCall() {
       setPhase('active');
     },
     onMessage: ({ message, role, source }) => {
-      const elapsed = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0;
       const isTrainee = role ? role === 'user' : source === 'user';
-      setTranscript((prev) => [...prev, { role: isTrainee ? 'agent' : 'customer', text: message, timestamp: formatElapsed(elapsed) }]);
+      setTranscript((prev) => [...prev, { role: isTrainee ? 'agent' : 'customer', text: message, timestamp: formatElapsed(elapsedSeconds()) }]);
     },
     onDisconnect: (details) => {
       if (phaseRef.current === 'active' || phaseRef.current === 'connecting') {
@@ -63,7 +81,7 @@ export function useTrainingCall() {
           setPhase('error');
           return;
         }
-        complete();
+        afterCall();
       }
     },
     onError: (message) => {
@@ -78,6 +96,9 @@ export function useTrainingCall() {
   const start = useCallback(async (scenarioId, mode, agentName) => {
     completingRef.current = false;
     conversationIdRef.current = null;
+    featuresRef.current = null;
+    actionsRef.current = [];
+    setActions([]);
     setTranscript([]);
     setResult(null);
     setErrorMessage('');
@@ -86,6 +107,7 @@ export function useTrainingCall() {
       const session = await apiFetch('/api/training/start', { method: 'POST', body: { scenarioId, mode, agentName } });
       setScenario(session.scenario);
       setPersona(session.persona);
+      featuresRef.current = session.scenario.features || null;
       setTimeRemaining(session.scenario.maxDurationSeconds);
       conversationIdRef.current = session.conversationId;
       try {
@@ -108,13 +130,26 @@ export function useTrainingCall() {
   const end = useCallback(() => {
     stopTimer();
     try { conversationRef.current.endSession(); } catch { /* already closed */ }
-    // onDisconnect → complete(); if the SDK doesn't fire it, complete anyway.
-    setTimeout(() => { if (!completingRef.current) complete(); }, 1500);
-  }, [complete]);
+    // onDisconnect → afterCall(); if the SDK doesn't fire it, move on anyway.
+    setTimeout(() => { if (phaseRef.current === 'active' || phaseRef.current === 'connecting') afterCall(); }, 1500);
+  }, [afterCall]);
+
+  /** Records a safety-panel click (first click per action counts; repeats are ignored). */
+  const recordAction = useCallback((key) => {
+    if (phaseRef.current !== 'active' || actionsRef.current.some((a) => a.key === key)) return;
+    const entry = { key, at: elapsedSeconds() };
+    actionsRef.current = [...actionsRef.current, entry];
+    setActions(actionsRef.current);
+  }, []);
+
+  const submitHandover = useCallback((note) => complete(note), [complete]);
+  const skipHandover = useCallback(() => complete(null), [complete]);
 
   const reset = useCallback(() => {
     stopTimer();
     completingRef.current = false;
+    actionsRef.current = [];
+    setActions([]);
     setPhase('idle');
     setTranscript([]);
     setResult(null);
@@ -136,8 +171,8 @@ export function useTrainingCall() {
   useEffect(() => () => { stopTimer(); try { conversationRef.current?.endSession(); } catch { /* noop */ } }, []);
 
   return {
-    phase, transcript, scenario, persona, result, errorMessage, timeRemaining,
+    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions,
     mode: conversation.mode, isMuted: conversation.isMuted, setMuted: conversation.setMuted,
-    start, end, reset,
+    start, end, reset, recordAction, submitHandover, skipHandover,
   };
 }

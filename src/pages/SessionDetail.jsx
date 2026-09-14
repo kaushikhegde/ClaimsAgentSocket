@@ -13,6 +13,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import GlassCard from '../components/GlassCard';
+import { HANDOVER_FIELDS } from '../handoverFields';
 
 /* ─── RTWASA Items ────────────────────────────────────────────── */
 
@@ -60,7 +61,21 @@ const COMPETENCY_GRADIENTS = {
   rtwasaCompliance: 'from-sky-500 to-sky-400',
   sopCompliance: 'from-fuchsia-500 to-fuchsia-400',
   rubricCompliance: 'from-fuchsia-500 to-fuchsia-400',
+  handoverCompleteness: 'from-sky-500 to-sky-400',
+  actionSequencing: 'from-amber-500 to-amber-400',
 };
+
+const HANDOVER_LABELS = Object.fromEntries(HANDOVER_FIELDS.map((f) => [f.key, f.label]));
+
+const ACTION_STATUS = {
+  pass: { label: 'Before claim', cls: 'text-green-600 bg-green-400/10 border-green-400/20' },
+  partial: { label: 'After claim', cls: 'text-amber-600 bg-amber-400/10 border-amber-400/20' },
+  fail: { label: 'Not done', cls: 'text-red-500 bg-red-400/10 border-red-400/20' },
+  done: { label: 'Claim opened', cls: 'text-[#464e7e] bg-[#464e7e]/10 border-[#464e7e]/20' },
+  not_done: { label: 'Claim not opened', cls: 'text-gray-500 bg-gray-50 border-gray-200' },
+};
+
+const fmtSeconds = (s) => (s == null ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
 
 // Competency labels are imported from ../scoreLabels (SCORE_LABELS, aliased above).
 
@@ -150,6 +165,10 @@ export default function SessionDetail() {
     { label: 'Empathy', value: session.scores?.empathy || 0, color: '#c084fc' },
     { label: 'Questions', value: session.scores?.questionQuality || 0, color: '#818cf8' },
     { label: 'Tone', value: session.scores?.toneConsistency || 0, color: '#2dd4bf' },
+    ...(session.scores?.handoverCompleteness != null
+      ? [{ label: 'Handover', value: session.scores.handoverCompleteness, color: '#38bdf8' }] : []),
+    ...(session.scores?.actionSequencing != null
+      ? [{ label: 'Sequencing', value: session.scores.actionSequencing, color: '#fbbf24' }] : []),
     { label: 'Talk / Listen', value: session.scores?.talkListenRatio || 0, color: '#fb7185' },
   ] : [
     { label: 'Overall', value: session.overall_score || 0, color: '#4ade80' },
@@ -527,6 +546,74 @@ export default function SessionDetail() {
                 </div>
               );
             })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* ── Safety Actions Timeline ─────────────────────────── */}
+      {Array.isArray(session.safety_actions?.items) && session.safety_actions.items.length > 0 && (
+        <GlassCard hover={false} className="p-5">
+          <div className="flex items-baseline justify-between gap-3 mb-4">
+            <h2 className="text-[13px] font-semibold text-gray-900 uppercase tracking-wider">System Actions Sequencing</h2>
+            <span className="text-xs text-gray-500">
+              Claim opened at {fmtSeconds(session.safety_actions.claimAt)} · score {session.safety_actions.score}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {[...session.safety_actions.items]
+              .sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity))
+              .map((a) => {
+                const st = ACTION_STATUS[a.status] || ACTION_STATUS.fail;
+                return (
+                  <div key={a.key} className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2">
+                    <span className="w-10 text-xs font-mono text-gray-400">{fmtSeconds(a.at)}</span>
+                    <span className="flex-1 text-[13px] text-gray-800">{a.label}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${st.cls}`}>{st.label}</span>
+                  </div>
+                );
+              })}
+          </div>
+        </GlassCard>
+      )}
+
+      {/* ── Handover Note ───────────────────────────────────── */}
+      {session.handover_breakdown && (
+        <GlassCard hover={false} className="p-5">
+          <div className="flex items-baseline justify-between gap-3 mb-4">
+            <h2 className="text-[13px] font-semibold text-gray-900 uppercase tracking-wider">Handover to Social Worker</h2>
+            <span className="text-xs text-gray-500">Completeness {session.handover_breakdown.completeness}%</span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              {session.handover_note ? (
+                HANDOVER_FIELDS.filter((f) => session.handover_note[f.key]).map((f) => (
+                  <div key={f.key}>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">{HANDOVER_LABELS[f.key]}</p>
+                    <p className="text-[13px] text-gray-800 whitespace-pre-wrap">{session.handover_note[f.key]}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-[13px] text-gray-500">No handover note was submitted.</p>
+              )}
+            </div>
+            <div className="space-y-3">
+              {[
+                ['missing', 'Missing from the note', 'text-amber-600', AlertTriangle],
+                ['incorrect', 'Recorded incorrectly', 'text-red-500', XCircle],
+                ['captured', 'Captured correctly', 'text-green-600', CheckCircle],
+              ].map((entry) => {
+                const [key, title, cls, Icon] = entry;
+                if ((session.handover_breakdown[key] || []).length === 0) return null;
+                return (
+                  <div key={key}>
+                    <p className={`flex items-center gap-1.5 text-[12px] font-semibold ${cls}`}><Icon size={13} /> {title}</p>
+                    <ul className="mt-1 space-y-0.5 pl-5 list-disc text-[12px] text-gray-600">
+                      {session.handover_breakdown[key].map((x, i) => <li key={i}>{x}</li>)}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </GlassCard>
       )}

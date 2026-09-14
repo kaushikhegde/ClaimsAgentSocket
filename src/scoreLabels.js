@@ -12,6 +12,8 @@ export const SCORE_LABELS = {
   rtwasaCompliance: 'RTWASA Compliance',
   sopCompliance: 'SOP Compliance',
   rubricCompliance: 'Checklist Compliance',
+  handoverCompleteness: 'Handover Completeness',
+  actionSequencing: 'Action Sequencing',
 };
 
 // Friendly label for a score key, falling back to spaced-out title case.

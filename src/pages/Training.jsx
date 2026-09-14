@@ -1,10 +1,12 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ConversationProvider } from '@elevenlabs/react';
-import { Mic, MicOff, Phone, PhoneOff, Clock, AlertCircle, User, Bot, FileText } from 'lucide-react';
+import { Mic, MicOff, Phone, PhoneOff, Clock, AlertCircle, User, Bot, FileText, ShieldCheck, AlertTriangle, CheckCircle } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
 import { useTrainingCall } from '../hooks/useTrainingCall';
 import { scoreLabel } from '../scoreLabels';
+import { apiFetch } from '../api';
+import { HANDOVER_FIELDS } from '../handoverFields';
 
 /* ─── Avatar Components ──────────────────────────────────────── */
 
@@ -49,6 +51,85 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+/* ─── Safety Actions Panel ────────────────────────────────────── */
+
+function SafetyActionsPanel({ items, done, onAction }) {
+  const doneAt = new Map(done.map((a) => [a.key, a.at]));
+  return (
+    <GlassCard hover={false} className="p-3 mb-4">
+      <div className="flex items-center gap-1.5 mb-2">
+        <ShieldCheck size={13} className="text-[#464e7e]" />
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">System actions</p>
+        <span className="text-[11px] text-gray-400">· click when you would action it in the system</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((a) => {
+          const at = doneAt.get(a.key);
+          const isDone = at !== undefined;
+          return (
+            <button
+              key={a.key}
+              type="button"
+              disabled={isDone}
+              onClick={() => onAction(a.key)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                isDone
+                  ? 'border-green-400/30 bg-green-400/10 text-green-600'
+                  : a.kind === 'claim'
+                    ? 'border-[#464e7e]/30 bg-[#464e7e] text-white hover:brightness-110'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-[#464e7e]/40'
+              }`}
+            >
+              {isDone && <CheckCircle size={12} />}
+              {a.label}
+              {isDone && <span className="text-[10px] text-green-600/70">{formatTime(at)}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </GlassCard>
+  );
+}
+
+/* ─── Handover Form ───────────────────────────────────────────── */
+
+function HandoverForm({ personaName, onSubmit, onSkip }) {
+  const [note, setNote] = useState(() => Object.fromEntries(HANDOVER_FIELDS.map((f) => [f.key, ''])));
+  const filled = Object.values(note).some((v) => v.trim());
+  return (
+    <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-md flex items-center justify-center p-4">
+      <GlassCard hover={false} className="p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-gray-900">Warm handover to Social Worker</h2>
+        <p className="text-xs text-gray-500 mt-1 mb-4">
+          Write the case notes the social worker will read before contacting {personaName || 'the caller'}. Capture what they need so the caller does not have to repeat their story. This note is scored.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {HANDOVER_FIELDS.map((f) => (
+            <label key={f.key} className={f.key === 'summary' ? 'sm:col-span-2' : ''}>
+              <span className="block text-xs font-medium text-gray-500 mb-1">{f.label}</span>
+              <textarea
+                rows={f.key === 'summary' ? 3 : 2}
+                value={note[f.key]}
+                placeholder={f.placeholder}
+                onChange={(e) => setNote((n) => ({ ...n, [f.key]: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:border-[#464e7e]"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button type="button" onClick={onSkip} className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-500 hover:bg-gray-50">
+            Skip (scores 0)
+          </button>
+          <button type="button" disabled={!filled} onClick={() => onSubmit(note)} className="px-5 py-2 rounded-xl bg-[#464e7e] text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+            Submit handover &amp; evaluate
+          </button>
+        </div>
+      </GlassCard>
+    </div>
+  );
+}
+
 /* ─── Training Page ───────────────────────────────────────────── */
 
 export default function Training() {
@@ -67,9 +148,21 @@ function TrainingCall() {
   const transcriptEndRef = useRef(null);
 
   const {
-    phase, transcript, scenario, persona, result, errorMessage, timeRemaining,
-    mode: agentMode, isMuted, setMuted, start, end, reset,
+    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions,
+    mode: agentMode, isMuted, setMuted, start, end, reset, recordAction, submitHandover, skipHandover,
   } = useTrainingCall();
+
+  // Features are known before the call starts so the content warning can gate it.
+  const [preview, setPreview] = useState(null);
+  const [warningAccepted, setWarningAccepted] = useState(false);
+  useEffect(() => {
+    apiFetch('/api/scenarios')
+      .then((list) => setPreview((Array.isArray(list) ? list : []).find((s) => s.id === scenarioId) || null))
+      .catch(() => {});
+  }, [scenarioId]);
+  const features = scenario?.features || preview?.features || null;
+  const contentWarning = features?.contentWarning || null;
+  const safetyActions = features?.safetyActions || [];
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -96,8 +189,8 @@ function TrainingCall() {
   const progress = ((maxDuration - timeRemaining) / maxDuration) * 100;
   const activePersona = persona || DEFAULT_PERSONA;
   const PersonaAvatar = activePersona.gender === 'female' ? FemaleAvatar : MaleAvatar;
-  const modeLabel = mode === 'freestyle' ? 'Freestyle' : 'Scripted';
-  const scenarioLabel = scenario?.name || 'Training';
+  const modeLabel = mode === 'freestyle' && !features?.scriptedOnly ? 'Freestyle' : 'Scripted';
+  const scenarioLabel = scenario?.name || preview?.name || 'Training';
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 flex flex-col">
@@ -185,6 +278,11 @@ function TrainingCall() {
             </div>
           </GlassCard>
 
+          {/* Safety Actions Panel */}
+          {status === 'active' && safetyActions.length > 0 && (
+            <SafetyActionsPanel items={safetyActions} done={actions} onAction={recordAction} />
+          )}
+
           {/* Transcript Area */}
           <GlassCard
             hover={false}
@@ -200,12 +298,31 @@ function TrainingCall() {
                     <div className="text-center">
                       <p className="text-gray-900 font-medium mb-1">Ready to begin?</p>
                       <p className="text-xs text-gray-500 max-w-xs">
-                        You'll be connected with a customer for a {formatTime(maxDuration)} training session.
+                        You'll be connected with a caller for a {formatTime(preview?.maxDurationSeconds || maxDuration)} training session.
                       </p>
+                      {mode === 'freestyle' && features?.scriptedOnly && (
+                        <p className="text-[11px] text-gray-400 mt-1">This scenario runs in scripted mode only.</p>
+                      )}
                     </div>
+                    {contentWarning && (
+                      <div className="max-w-md rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-left">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-700"><AlertTriangle size={13} /> Content warning</p>
+                        <p className="text-xs text-amber-800 mt-1 leading-relaxed">{contentWarning}</p>
+                        <label className="flex items-center gap-2 mt-2 text-xs text-amber-900">
+                          <input type="checkbox" checked={warningAccepted} onChange={(e) => setWarningAccepted(e.target.checked)} />
+                          I understand and want to continue
+                        </label>
+                      </div>
+                    )}
+                    {safetyActions.length > 0 && (
+                      <p className="text-[11px] text-gray-400 max-w-sm text-center">
+                        During the call, use the <span className="font-medium text-gray-500">System actions</span> panel to record when you would protect the caller's records and open the claim.
+                      </p>
+                    )}
                     <button
                       onClick={handleStart}
-                      className="mt-2 px-6 py-3 rounded-xl bg-[#464e7e] text-sm font-semibold text-white shadow-lg shadow-[#464e7e]/20 transition hover:brightness-110 active:scale-[0.97]"
+                      disabled={!!contentWarning && !warningAccepted}
+                      className="mt-2 px-6 py-3 rounded-xl bg-[#464e7e] text-sm font-semibold text-white shadow-lg shadow-[#464e7e]/20 transition hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Start Training
                     </button>
@@ -309,6 +426,11 @@ function TrainingCall() {
         </div>
       )}
 
+      {/* ── Handover Overlay ──────────────────────────────── */}
+      {status === 'handover' && (
+        <HandoverForm personaName={activePersona.name} onSubmit={submitHandover} onSkip={skipHandover} />
+      )}
+
       {/* ── Processing / Complete Overlay ─────────────────── */}
       {(status === 'processing' || status === 'complete') && (
         <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-md flex items-center justify-center">
@@ -316,7 +438,9 @@ function TrainingCall() {
             <GlassCard hover={false} className="p-8 text-center max-w-sm">
               <div className="w-14 h-14 rounded-full border-[2.5px] border-[#464e7e]/20 border-t-[#464e7e] animate-spin mx-auto mb-5" />
               <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Evaluating your performance...</h2>
-              <p className="text-xs text-gray-500">Analyzing empathy, compliance, and information gathering</p>
+              <p className="text-xs text-gray-500">
+                {features?.handoverNote ? 'Scoring the call, your system actions and the handover note' : 'Analyzing empathy, compliance, and information gathering'}
+              </p>
             </GlassCard>
           ) : (
             <GlassCard hover={false} className="p-8 max-w-md w-full">

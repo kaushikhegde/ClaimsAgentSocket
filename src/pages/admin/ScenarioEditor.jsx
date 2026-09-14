@@ -16,7 +16,9 @@ const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
 const DEFAULT_OPENING = 'Hi… yeah, I need to file a claim. I got hurt at work.';
 
 const emptyPersona = () => ({ key: Math.random().toString(36).slice(2), name: '', gender: 'male', emotionalState: '', backstory: '', openingLine: DEFAULT_OPENING, voiceId: null, voiceName: null });
-const emptyScenario = () => ({ id: '', name: '', description: '', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, defaultVoiceId: null, defaultVoiceName: null, callerContext: '', evaluatorRole: '', rubric: null, personas: [emptyPersona()] });
+const emptyScenario = () => ({ id: '', name: '', description: '', claimType: 'workplace_injury', difficulty: 'beginner', maxDurationSeconds: 180, defaultVoiceId: null, defaultVoiceName: null, callerContext: '', evaluatorRole: '', rubric: null, features: emptyFeatures(), personas: [emptyPersona()] });
+const emptyFeatures = () => ({ handoverNote: false, safetyActions: [], contentWarning: '', scriptedOnly: false });
+const emptyAction = () => ({ uid: Math.random().toString(36).slice(2), key: '', label: '', kind: 'protect' });
 const emptyRubricItem = () => ({ uid: Math.random().toString(36).slice(2), key: '', label: '', description: '', critical: false });
 const withUids = (rubric) => (rubric ? { ...rubric, items: rubric.items.map((it) => ({ uid: it.key || Math.random().toString(36).slice(2), ...it })) } : null);
 
@@ -64,6 +66,11 @@ export default function ScenarioEditor() {
       id: s.id, name: s.name, description: s.description || '', claimType: s.claimType, difficulty: s.difficulty,
       maxDurationSeconds: s.maxDurationSeconds, defaultVoiceId: s.defaultVoiceId, defaultVoiceName: s.defaultVoiceName,
       callerContext: s.callerContext || '', evaluatorRole: s.evaluatorRole || '', rubric: withUids(s.rubric),
+      features: {
+        ...emptyFeatures(), ...(s.features || {}),
+        contentWarning: s.features?.contentWarning || '',
+        safetyActions: (s.features?.safetyActions || []).map((a) => ({ uid: a.key, ...a })),
+      },
       personas: s.personas.map((p) => ({ key: p.id, ...p })),
     });
     setDocuments(s.documents || []);
@@ -86,7 +93,9 @@ export default function ScenarioEditor() {
   }, [indexing, id, isNew]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const setRubricItem = (uid, patch) => setForm((f) => ({ ...f, rubric: { ...f.rubric, items: f.rubric.items.map((it) => (it.uid === uid ? { ...it, ...patch } : it)) } }));
+  const setFeatures = (patch) => setForm((f) => ({ ...f, features: { ...f.features, ...patch } }));
+  const setAction = (uid, patch) => setForm((f) => ({ ...f, features: { ...f.features, safetyActions: f.features.safetyActions.map((a) => (a.uid === uid ? { ...a, ...patch } : a)) } }));
+  const setRubricItem =(uid, patch) => setForm((f) => ({ ...f, rubric: { ...f.rubric, items: f.rubric.items.map((it) => (it.uid === uid ? { ...it, ...patch } : it)) } }));
   const setPersona = (key, patch) => setForm((f) => ({ ...f, personas: f.personas.map((p) => (p.key === key ? { ...p, ...patch } : p)) }));
   const movePersona = (idx, dir) => setForm((f) => {
     const arr = [...f.personas]; const j = idx + dir;
@@ -104,6 +113,13 @@ export default function ScenarioEditor() {
         rubric: form.rubric
           ? { title: form.rubric.title, items: form.rubric.items.map((it) => ({ key: it.key, label: it.label, description: it.description, critical: it.critical })) }
           : null,
+        // Handover and safety actions are only scored alongside a checklist.
+        features: {
+          handoverNote: !!form.rubric && form.features.handoverNote,
+          safetyActions: form.rubric ? form.features.safetyActions.map((a) => ({ key: a.key, label: a.label, kind: a.kind })) : [],
+          contentWarning: form.features.contentWarning,
+          scriptedOnly: form.features.scriptedOnly,
+        },
         personas: form.personas.map((p) => {
           const { key: _key, id: pid, scenarioId: _sid, sortOrder: _so, ...rest } = p;
           return pid && !isNew ? { id: pid, ...rest } : rest;
@@ -226,6 +242,44 @@ export default function ScenarioEditor() {
               </div>
             ))}
           </div>
+        )}
+      </GlassCard>
+
+      <GlassCard hover={false} className="p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-900">Training features</h2>
+        <Field label="Content warning" hint="Shown before the call; the trainee must acknowledge it to start. Leave blank for none.">
+          <textarea className={inputCls} rows={2} value={form.features.contentWarning} onChange={(e) => setFeatures({ contentWarning: e.target.value })} placeholder="e.g. This scenario includes family and domestic violence…" />
+        </Field>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={form.features.scriptedOnly} onChange={(e) => setFeatures({ scriptedOnly: e.target.checked })} />
+          Scripted mode only <span className="text-xs text-gray-400">(personas carry cues a freestyle caller won’t reproduce)</span>
+        </label>
+        {!form.rubric ? (
+          <p className="text-xs text-gray-400">Turn on a custom scoring checklist to enable the handover note and the safety-actions panel.</p>
+        ) : (
+          <>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={form.features.handoverNote} onChange={(e) => setFeatures({ handoverNote: e.target.checked })} />
+              Post-call handover note <span className="text-xs text-gray-400">(scored for completeness against the call)</span>
+            </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Safety actions panel ({form.features.safetyActions.length}/12)</p>
+                <button type="button" disabled={form.features.safetyActions.length >= 12} onClick={() => setFeatures({ safetyActions: [...form.features.safetyActions, emptyAction()] })} className="inline-flex items-center gap-1 text-xs font-medium text-[#464e7e] disabled:opacity-40"><Plus size={13} /> Add action</button>
+              </div>
+              <p className="text-[11px] text-gray-400">Buttons the trainee clicks during the call. Protective actions clicked before the first “opens claim” action score as on time.</p>
+              {form.features.safetyActions.map((a) => (
+                <div key={a.uid} className="flex items-center gap-2">
+                  <input className={inputCls} value={a.label} onChange={(e) => setAction(a.uid, { label: e.target.value })} placeholder="e.g. Suppress address" />
+                  <select className={`${inputCls} w-40 shrink-0`} value={a.kind} onChange={(e) => setAction(a.uid, { kind: e.target.value })}>
+                    <option value="protect">Protective</option>
+                    <option value="claim">Opens claim</option>
+                  </select>
+                  <button type="button" onClick={() => setFeatures({ safetyActions: form.features.safetyActions.filter((x) => x.uid !== a.uid) })} aria-label="Remove action" className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </GlassCard>
 
