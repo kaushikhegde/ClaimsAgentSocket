@@ -1,5 +1,5 @@
 const express = require('express');
-const { startCall, completeCall, CallFlowError } = require('../training/callFlow');
+const { startCall, draftHandover, completeCall, CallFlowError } = require('../training/callFlow');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -18,6 +18,15 @@ router.post('/start', async (req, res) => {
     res.json(await startCall({ scenarioId, mode, agentName, personaId }));
   } catch (err) {
     sendError(res, err, 'Failed to start training call');
+  }
+});
+
+router.post('/handover-draft', async (req, res) => {
+  try {
+    const { conversationId } = req.body || {};
+    res.json(await draftHandover({ conversationId }));
+  } catch (err) {
+    sendError(res, err, 'Failed to draft the handover note');
   }
 });
 

@@ -215,6 +215,13 @@ async function insertPendingCall({ conversationId, scenarioId, personaId, mode, 
   );
 }
 
+/** Returns the pending call without removing it, or null when unknown. */
+async function getPendingCall(conversationId) {
+  const res = await pool.query('SELECT scenario_id FROM pending_calls WHERE conversation_id = $1', [conversationId]);
+  const r = res.rows[0];
+  return r ? { conversationId, scenarioId: r.scenario_id } : null;
+}
+
 /** Returns and removes the pending call, or null when unknown. */
 async function takePendingCall(conversationId) {
   const res = await pool.query('DELETE FROM pending_calls WHERE conversation_id = $1 RETURNING *', [conversationId]);
@@ -249,6 +256,6 @@ module.exports = {
   listScenarios, getScenario, createScenario, updateScenario, deactivateScenario,
   setAgentSync, setDefaultVoice,
   listDocuments, getDocument, insertDocument, updateDocumentStatus, deleteDocument,
-  insertPendingCall, takePendingCall, purgeStalePendingCalls,
+  insertPendingCall, getPendingCall, takePendingCall, purgeStalePendingCalls,
   toPublicScenario,
 };

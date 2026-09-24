@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { startCall, completeCall, CallFlowError } = require('../src/training/callFlow');
+const { startCall, draftHandover, completeCall, CallFlowError } = require('../src/training/callFlow');
 const { ElevenLabsError } = require('../src/elevenlabs/client');
 
 const scenario = {
@@ -17,6 +17,7 @@ function fakeDeps({ conversation, evaluation, tokenError } = {}) {
     db: {
       async getScenario(id) { return id === scenario.id ? scenario : null; },
       async insertPendingCall(row) { pending.set(row.conversationId, row); calls.push(['pending', row]); },
+      async getPendingCall(id) { return pending.get(id) || null; },
       async takePendingCall(id) { const r = pending.get(id) || null; pending.delete(id); return r; },
       async purgeStalePendingCalls() {},
     },
@@ -29,6 +30,7 @@ function fakeDeps({ conversation, evaluation, tokenError } = {}) {
       transcriptToText: require('../src/elevenlabs/conversations').transcriptToText,
     },
     evaluate: async (text, ctx) => { calls.push(['evaluate', text, ctx]); return evaluation; },
+    draftHandover: async (text) => { calls.push(['draft', text]); return { safetyStatus: 'Safe at sister’s house' }; },
     blob: { async uploadAudio(name, buf, ct) { calls.push(['audio', name, ct]); return `claims-agent/${name}`; } },
     pool: { async connect() { return { async query(sql) { calls.push(['sql', sql]); return { rows: [] }; }, release() {} }; } },
     insertSession: async (data) => { calls.push(['insertSession', data]); return { id: 'sess_1', created_at: new Date('2026-09-11T00:00:00Z') }; },
@@ -191,5 +193,48 @@ describe('completeCall', () => {
     const fb = calls.find((c) => c[0] === 'fallback')[1];
     assert.strictEqual(fb.error, 'gemini down');
     assert.ok(fb.redactedTranscript.includes('Customer:'));
+  });
+});
+
+describe('draftHandover', () => {
+  const conversation = { status: 'done', transcript: [
+    { role: 'agent', message: 'Centrelink, how can I help?', time_in_call_secs: 0 },
+    { role: 'user', message: 'I am staying at my sister’s now.', time_in_call_secs: 4 },
+  ], metadata: {} };
+
+  function handoverDeps(features) {
+    const { deps, calls } = fakeDeps({ conversation, evaluation });
+    const withHandover = { ...scenario, features };
+    deps.db.getScenario = async (id) => (id === scenario.id ? withHandover : null);
+    return { deps, calls };
+  }
+
+  it('drafts the note from the transcript and keeps the pending call for completeCall', async () => {
+    const { deps, calls } = handoverDeps({ handoverNote: true });
+    await startCall({ scenarioId: 'chest-injury', mode: 'scripted' }, deps);
+    const out = await draftHandover({ conversationId: 'conv_1' }, deps);
+    assert.deepStrictEqual(out, { note: { safetyStatus: 'Safe at sister’s house' } });
+    const draft = calls.find((c) => c[0] === 'draft');
+    assert.ok(draft[1].includes('Customer: Centrelink, how can I help?'));
+    assert.ok(await deps.db.getPendingCall('conv_1'));
+  });
+
+  it('rejects scenarios without a handover note', async () => {
+    const { deps } = handoverDeps({ handoverNote: false });
+    await startCall({ scenarioId: 'chest-injury', mode: 'scripted' }, deps);
+    await assert.rejects(draftHandover({ conversationId: 'conv_1' }, deps), (e) => e instanceof CallFlowError && e.status === 400);
+  });
+
+  it('rejects unknown conversations', async () => {
+    const { deps } = handoverDeps({ handoverNote: true });
+    await assert.rejects(draftHandover({ conversationId: 'nope' }, deps), (e) => e instanceof CallFlowError && e.status === 404);
+  });
+
+  it('returns no note for an empty call', async () => {
+    const { deps, calls } = handoverDeps({ handoverNote: true });
+    deps.conversations.waitForConversation = async () => ({ status: 'done', transcript: [], metadata: {} });
+    await startCall({ scenarioId: 'chest-injury', mode: 'scripted' }, deps);
+    assert.deepStrictEqual(await draftHandover({ conversationId: 'conv_1' }, deps), { note: null });
+    assert.ok(!calls.some((c) => c[0] === 'draft'));
   });
 });

@@ -22,6 +22,7 @@ function defaultDeps() {
     sync: require('./scenarioSync'),
     conversations: require('../elevenlabs/conversations'),
     evaluate: require('../evaluation/agent').evaluateSession,
+    draftHandover: require('../evaluation/handoverDraft').draftHandoverNote,
     blob: require('../storage/blob'),
     pool: require('../db/pool'),
     insertSession: require('../db/sessions').insertSession,
@@ -106,6 +107,32 @@ async function startCall({ scenarioId, mode, agentName, personaId }, deps) {
   } catch (err) {
     throw mapElevenLabsError(err);
   }
+}
+
+/**
+ * Drafts the handover note from the finished call so the trainee can review it
+ * instead of typing it. Leaves the pending call in place for completeCall.
+ */
+async function draftHandover({ conversationId }, deps) {
+  const d = withDefaults(deps);
+  if (!conversationId || typeof conversationId !== 'string') throw new CallFlowError(400, 'Missing conversationId');
+
+  const pending = await d.db.getPendingCall(conversationId);
+  if (!pending) throw new CallFlowError(404, 'Unknown or expired conversation');
+  const scenario = await d.db.getScenario(pending.scenarioId, { includeInactive: true });
+  if (!normalizeFeatures(scenario && scenario.features).handoverNote) {
+    throw new CallFlowError(400, 'This scenario has no handover note');
+  }
+
+  let conversation;
+  try {
+    conversation = await d.conversations.waitForConversation(d.client, conversationId);
+  } catch (err) {
+    throw mapElevenLabsError(err);
+  }
+  const entries = d.conversations.mapTranscript(conversation.transcript);
+  if (entries.length === 0) return { note: null };
+  return { note: await d.draftHandover(d.conversations.transcriptToText(entries)) };
 }
 
 async function completeCall({ conversationId, handoverNote, safetyActions }, deps) {
@@ -235,4 +262,4 @@ async function completeCall({ conversationId, handoverNote, safetyActions }, dep
   }
 }
 
-module.exports = { startCall, completeCall, CallFlowError };
+module.exports = { startCall, draftHandover, completeCall, CallFlowError };
