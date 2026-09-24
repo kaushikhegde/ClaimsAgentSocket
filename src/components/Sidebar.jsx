@@ -23,6 +23,7 @@ const navSections = [
   },
   {
     label: 'Insights',
+    hidden: true,
     items: [
       { to: '/performance', icon: BarChart3, label: 'Analytics' },
       { to: '/coaching', icon: BookOpen, label: 'Coaching' },
@@ -87,7 +88,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-4 space-y-6 overflow-y-auto">
-        {navSections.map((section) => (
+        {navSections.filter((section) => !section.hidden).map((section) => (
           <div key={section.label}>
             <p className="text-[10.5px] uppercase tracking-[0.12em] text-gray-400 font-medium px-3 mb-2">
               {section.label}

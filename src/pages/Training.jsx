@@ -93,9 +93,13 @@ function SafetyActionsPanel({ items, done, onAction }) {
 
 /* ─── Handover Form ───────────────────────────────────────────── */
 
-function HandoverForm({ personaName, onSubmit, onSkip }) {
-  const [note, setNote] = useState(() => Object.fromEntries(HANDOVER_FIELDS.map((f) => [f.key, ''])));
+function HandoverForm({ personaName, draft, onSubmit, onSkip }) {
+  // Fields the trainee has touched keep their text; the rest show the AI draft.
+  const [edits, setEdits] = useState({});
+  const note = Object.fromEntries(HANDOVER_FIELDS.map((f) => [f.key, edits[f.key] ?? (draft.note?.[f.key] || '')]));
   const filled = Object.values(note).some((v) => v.trim());
+  const drafting = draft.status === 'loading';
+
   return (
     <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-md flex items-center justify-center p-4">
       <GlassCard hover={false} className="p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -103,6 +107,22 @@ function HandoverForm({ personaName, onSubmit, onSkip }) {
         <p className="text-xs text-gray-500 mt-1 mb-4">
           Write the case notes the social worker will read before contacting {personaName || 'the caller'}. Capture what they need so the caller does not have to repeat their story. This note is scored.
         </p>
+        {drafting && (
+          <p className="flex items-center gap-2 text-xs text-[#464e7e] bg-[#eef0f6] rounded-lg px-3 py-2 mb-4" role="status">
+            <span className="w-3 h-3 rounded-full border-2 border-[#464e7e]/30 border-t-[#464e7e] animate-spin" />
+            Filling in the note from the call…
+          </p>
+        )}
+        {draft.status === 'ready' && draft.note && (
+          <p className="text-xs text-[#464e7e] bg-[#eef0f6] rounded-lg px-3 py-2 mb-4" role="status">
+            Pre-filled from the call. Check each field and fix anything that is wrong or missing.
+          </p>
+        )}
+        {draft.status === 'failed' && (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-4" role="status">
+            Could not pre-fill the note from the call. Please fill it in yourself.
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {HANDOVER_FIELDS.map((f) => (
             <label key={f.key} className={f.key === 'summary' ? 'sm:col-span-2' : ''}>
@@ -110,8 +130,8 @@ function HandoverForm({ personaName, onSubmit, onSkip }) {
               <textarea
                 rows={f.key === 'summary' ? 3 : 2}
                 value={note[f.key]}
-                placeholder={f.placeholder}
-                onChange={(e) => setNote((n) => ({ ...n, [f.key]: e.target.value }))}
+                placeholder={drafting ? 'Filling from the call…' : f.placeholder}
+                onChange={(e) => setEdits((n) => ({ ...n, [f.key]: e.target.value }))}
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:border-[#464e7e]"
               />
             </label>
@@ -121,7 +141,7 @@ function HandoverForm({ personaName, onSubmit, onSkip }) {
           <button type="button" onClick={onSkip} className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-500 hover:bg-gray-50">
             Skip (scores 0)
           </button>
-          <button type="button" disabled={!filled} onClick={() => onSubmit(note)} className="px-5 py-2 rounded-xl bg-[#464e7e] text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+          <button type="button" disabled={!filled || drafting} onClick={() => onSubmit(note)} className="px-5 py-2 rounded-xl bg-[#464e7e] text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
             Submit handover &amp; evaluate
           </button>
         </div>
@@ -151,7 +171,7 @@ function TrainingCall() {
   const transcriptEndRef = useRef(null);
 
   const {
-    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions,
+    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions, handoverDraft,
     mode: agentMode, isMuted, setMuted, start, end, reset, recordAction, submitHandover, skipHandover,
   } = useTrainingCall();
 
@@ -437,7 +457,7 @@ function TrainingCall() {
 
       {/* ── Handover Overlay ──────────────────────────────── */}
       {status === 'handover' && (
-        <HandoverForm personaName={activePersona.name} onSubmit={submitHandover} onSkip={skipHandover} />
+        <HandoverForm personaName={activePersona.name} draft={handoverDraft} onSubmit={submitHandover} onSkip={skipHandover} />
       )}
 
       {/* ── Processing / Complete Overlay ─────────────────── */}

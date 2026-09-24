@@ -18,6 +18,8 @@ export function useTrainingCall() {
   const [errorMessage, setErrorMessage] = useState('');
   const [timeRemaining, setTimeRemaining] = useState(180);
   const [actions, setActions] = useState([]);
+  // AI-drafted handover note: 'idle' | 'loading' | 'ready' | 'failed'.
+  const [handoverDraft, setHandoverDraft] = useState({ status: 'idle', note: null });
 
   const phaseRef = useRef('idle');
   const conversationIdRef = useRef(null);
@@ -59,6 +61,12 @@ export function useTrainingCall() {
     if (featuresRef.current?.handoverNote) {
       phaseRef.current = 'handover';
       setPhase('handover');
+      // Pre-fill the form from the call; the trainee reviews and edits before submitting.
+      const conversationId = conversationIdRef.current;
+      setHandoverDraft({ status: 'loading', note: null });
+      apiFetch('/api/training/handover-draft', { method: 'POST', body: { conversationId } })
+        .then((out) => { if (conversationIdRef.current === conversationId) setHandoverDraft({ status: 'ready', note: out.note || null }); })
+        .catch(() => { if (conversationIdRef.current === conversationId) setHandoverDraft({ status: 'failed', note: null }); });
     } else {
       complete();
     }
@@ -99,6 +107,7 @@ export function useTrainingCall() {
     featuresRef.current = null;
     actionsRef.current = [];
     setActions([]);
+    setHandoverDraft({ status: 'idle', note: null });
     setTranscript([]);
     setResult(null);
     setErrorMessage('');
@@ -150,6 +159,7 @@ export function useTrainingCall() {
     completingRef.current = false;
     actionsRef.current = [];
     setActions([]);
+    setHandoverDraft({ status: 'idle', note: null });
     setPhase('idle');
     setTranscript([]);
     setResult(null);
@@ -171,7 +181,7 @@ export function useTrainingCall() {
   useEffect(() => () => { stopTimer(); try { conversationRef.current?.endSession(); } catch { /* noop */ } }, []);
 
   return {
-    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions,
+    phase, transcript, scenario, persona, result, errorMessage, timeRemaining, actions, handoverDraft,
     mode: conversation.mode, isMuted: conversation.isMuted, setMuted: conversation.setMuted,
     start, end, reset, recordAction, submitHandover, skipHandover,
   };
