@@ -1,0 +1,12 @@
+# Local run: one container serves the API and the built frontend.
+#   docker compose up --build   ->   http://localhost:3055
+# Override the host port with HOST_PORT=xxxx (3000 is often taken locally).
+services:
+  claims-agent:
+    build: .
+    env_file: backend/.env
+    environment:
+      PORT: 3000
+    ports:
+      - "${HOST_PORT:-3055}:3000"
+    restart: unless-stopped

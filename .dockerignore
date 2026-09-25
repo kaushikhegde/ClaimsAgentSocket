@@ -1,0 +1,17 @@
+**/node_modules
+**/.env
+**/.env.*
+**/.DS_Store
+.git
+.old-git
+.github
+.idea
+.superpowers
+docs
+*.pdf
+backend/audio
+backend/fallback
+backend/tests
+backend/public
+frontend/dist
+frontend/.vite

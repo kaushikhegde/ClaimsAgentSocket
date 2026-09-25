@@ -5,6 +5,7 @@ const config = require('./config');
 const pool = require('./db/pool');
 const logger = require('./utils/logger');
 const blobStorage = require('./storage/blob');
+const { mountSpa } = require('./spa');
 const { getAllSessions, getSessionById, getSessionsByScenario, getAgentStats, getScoreHistory } = require('./db/sessions');
 
 const app = express();
@@ -20,8 +21,9 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '1mb' }));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../public')));
+// Serve static files (the built frontend lives here in the Docker image)
+const PUBLIC_DIR = path.join(__dirname, '../public');
+app.use(express.static(PUBLIC_DIR));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -119,6 +121,9 @@ app.get('/api/stats', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
+
+// Must come after every API route: unmatched GETs fall through to the SPA.
+if (mountSpa(app, PUBLIC_DIR)) logger.info('Serving frontend build from public/');
 
 server.listen(config.port, () => {
   logger.info(`Server running on http://localhost:${config.port}`);

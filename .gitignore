@@ -1,0 +1,9 @@
+node_modules
+.DS_Store
+.env
+.idea
+.superpowers
+docs
+audio
+# Old per-app .git folders kept as a backup after the monorepo merge
+.old-git
