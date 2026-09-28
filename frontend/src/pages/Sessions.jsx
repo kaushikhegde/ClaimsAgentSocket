@@ -1,85 +1,8 @@
 import { useState, useEffect } from 'react';
-import { apiUrl } from '../api';
+import { apiFetch } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { Search, Heart, Ear, Bone, Shuffle, Zap } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
-
-const SESSIONS = [
-  {
-    id: 'session-1',
-    name: 'Chest Injury',
-    scenario: 'Chest Injury',
-    mode: 'Scripted',
-    duration: '2m 47s',
-    empathy: 94,
-    compliance: 96,
-    score: 87,
-    rating: 'excellent',
-    date: 'Apr 3',
-  },
-  {
-    id: 'session-2',
-    name: 'Hearing Loss',
-    scenario: 'Hearing Loss',
-    mode: 'Scripted',
-    duration: '2m 32s',
-    empathy: 88,
-    compliance: 91,
-    score: 82,
-    rating: 'good',
-    date: 'Apr 2',
-  },
-  {
-    id: 'session-3',
-    name: 'Physical Injury',
-    scenario: 'Physical Injury',
-    mode: 'Freestyle',
-    duration: '2m 58s',
-    empathy: 76,
-    compliance: 88,
-    score: 74,
-    rating: 'average',
-    date: 'Apr 1',
-  },
-  {
-    id: 'session-4',
-    name: 'Chest Injury',
-    scenario: 'Chest Injury',
-    mode: 'Scripted',
-    duration: '2m 51s',
-    empathy: 82,
-    compliance: 90,
-    score: 79,
-    rating: 'good',
-    date: 'Mar 30',
-  },
-  {
-    id: 'session-5',
-    name: 'Freestyle',
-    scenario: 'Freestyle',
-    mode: 'Random',
-    duration: '1m 45s',
-    empathy: 71,
-    compliance: 82,
-    score: 65,
-    rating: 'poor',
-    date: 'Mar 28',
-  },
-  {
-    id: 'session-6',
-    name: 'Hearing Loss',
-    scenario: 'Hearing Loss',
-    mode: 'Scripted',
-    duration: '2m 12s',
-    empathy: 68,
-    compliance: 85,
-    score: 62,
-    rating: 'poor',
-    date: 'Mar 26',
-  },
-];
-
-const FILTERS = ['All Sessions', 'Chest Injury', 'Hearing Loss', 'Physical Injury', 'Freestyle'];
 
 const SCORE_STYLES = {
   excellent: 'text-green-400 bg-green-400/[0.12]',
@@ -100,12 +23,12 @@ const DEFAULT_ICON = { icon: Zap, bg: 'bg-[#eef0f6]', color: 'text-[#464e7e]' };
 export default function Sessions() {
   const [activeFilter, setActiveFilter] = useState('All Sessions');
   const [search, setSearch] = useState('');
-  const [sessions, setSessions] = useState(null);
+  const [sessions, setSessions] = useState(null); // null = still loading
+  const [loadError, setLoadError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(apiUrl('/api/sessions?limit=50'))
-      .then(r => r.json())
+    apiFetch('/api/sessions?limit=50')
       .then(data => {
         if (Array.isArray(data)) {
           setSessions(data.map(s => ({
@@ -120,14 +43,22 @@ export default function Sessions() {
             rating: s.overall_score >= 85 ? 'excellent' : s.overall_score >= 75 ? 'good' : s.overall_score >= 65 ? 'average' : 'poor',
             date: new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           })));
+        } else {
+          setSessions([]);
         }
       })
-      .catch(() => setSessions(null));
+      .catch(err => {
+        setLoadError(err.message);
+        setSessions([]);
+      });
   }, []);
 
-  const displaySessions = sessions ?? SESSIONS;
+  const loading = sessions === null;
+  const allSessions = sessions ?? [];
+  // Filter chips come from the scenarios that actually have sessions.
+  const filters = ['All Sessions', ...new Set(allSessions.map(s => s.scenario))];
 
-  const filtered = displaySessions.filter((s) => {
+  const filtered = allSessions.filter((s) => {
     const matchFilter = activeFilter === 'All Sessions' || s.scenario === activeFilter;
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
@@ -146,7 +77,7 @@ export default function Sessions() {
       {/* Filter Bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          {FILTERS.map((f) => (
+          {filters.map((f) => (
             <button
               key={f}
               onClick={() => setActiveFilter(f)}
@@ -221,11 +152,15 @@ export default function Sessions() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <p className="text-sm text-gray-500">
-              {sessions !== null && sessions.length === 0
-                ? 'No training sessions yet'
-                : 'No sessions match your filters'}
+              {loading
+                ? 'Loading sessions...'
+                : loadError
+                  ? `Couldn't load sessions: ${loadError}`
+                  : allSessions.length === 0
+                    ? 'No training sessions yet'
+                    : 'No sessions match your filters'}
             </p>
-            {sessions !== null && sessions.length === 0 && (
+            {!loading && !loadError && allSessions.length === 0 && (
               <p className="text-xs text-gray-400 mt-1">Complete a training scenario to see your session history here</p>
             )}
           </div>
